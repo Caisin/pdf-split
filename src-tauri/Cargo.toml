@@ -18,8 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# kx-pdf= {version="0.1",registry="hekx"}
-kx-pdf= {version="0.1",path="/Volumes/data/code/rust/kx/crates/pdf"}
+kx-pdf= {version="0.1",registry="hekx"}
+# kx-pdf= {version="0.1",path="/Volumes/data/code/rust/kx/crates/pdf"}
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

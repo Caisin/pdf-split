@@ -343,9 +343,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bcrypt"
-version = "0.18.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a0f5948f30df5f43ac29d310b7476793be97c50787e6ef4a63d960a0d0be827"
+checksum = "abaf6da45c74385272ddf00e1ac074c7d8a6c1a1dda376902bd6a427522a8b2c"
 dependencies = [
  "base64 0.22.1",
  "blowfish",
@@ -2564,7 +2564,9 @@ dependencies = [
 
 [[package]]
 name = "kx-pdf"
-version = "0.1.20"
+version = "0.1.21"
+source = "sparse+http://kellnr.caisin.tech/api/v1/crates/"
+checksum = "d39b774afb0adf8727fcdda60f7797ce76ef2c1d97dfb88fc16ada42ed89bba1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -2578,7 +2580,9 @@ dependencies = [
 
 [[package]]
 name = "kx-tools"
-version = "0.1.20"
+version = "0.1.11"
+source = "sparse+http://kellnr.caisin.tech/api/v1/crates/"
+checksum = "5c1530be2e55a89c8730fd86bb274ec92a6d59f9e9e281bc30de17d0271a6bd1"
 dependencies = [
  "anyhow",
  "bcrypt",
