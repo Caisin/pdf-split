@@ -59,6 +59,59 @@ const TAB_ITEMS: TabItem[] = [
   },
 ];
 
+function FilePickerIcon({ kind }: { kind: "file" | "folder" }) {
+  if (kind === "folder") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2h7.5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 4.5h7l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 19V6A1.5 1.5 0 0 1 7.5 4.5z" />
+      <path d="M14 4.5V8h3" />
+    </svg>
+  );
+}
+
+type PickerFieldProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  buttonLabel: "选择 PDF" | "选择目录";
+  kind: "file" | "folder";
+  onPick: () => void;
+};
+
+function PickerField({
+  label,
+  placeholder,
+  value,
+  buttonLabel,
+  kind,
+  onPick,
+}: PickerFieldProps) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <div className="input-shell picker-shell">
+        <input readOnly value={value} placeholder={placeholder} />
+        <button
+          className="picker-icon-button"
+          type="button"
+          aria-label={buttonLabel}
+          title={buttonLabel}
+          onClick={onPick}
+        >
+          <FilePickerIcon kind={kind} />
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ToolTab>("split");
   const [imagePdfPath, setImagePdfPath] = useState("");
@@ -242,14 +295,6 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="hero">
-        <p className="eyebrow">Desktop PDF Workshop</p>
-        <h1>PDF 转图片与文字水印</h1>
-        <p className="hero-copy">
-          在一个页面完成 PDF 按页导出、内嵌图片提取和文字水印生成。文件选择、目录选择和结果回显都在本地执行。
-        </p>
-      </section>
-
       <section className="tab-shell">
         <Tabs.Root
           className="tabs-root"
@@ -273,35 +318,35 @@ function App() {
                 <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
               </div>
 
-              <label className="field">
-                <span>PDF 文件</span>
-                <div className="picker-row">
-                  <input readOnly value={imagePdfPath} placeholder="请选择一个 PDF 文件" />
-                  <button type="button" onClick={handlePickImagePdf}>
-                    选择 PDF
-                  </button>
-                </div>
-              </label>
+              <PickerField
+                label="PDF 文件"
+                placeholder="请选择一个 PDF 文件"
+                value={imagePdfPath}
+                buttonLabel="选择 PDF"
+                kind="file"
+                onPick={handlePickImagePdf}
+              />
 
-              <label className="field">
-                <span>输出目录</span>
-                <div className="picker-row">
-                  <input readOnly value={imageOutputDir} placeholder="请选择输出目录" />
-                  <button type="button" onClick={handlePickImageOutputDir}>
-                    选择目录
-                  </button>
-                </div>
-              </label>
+              <PickerField
+                label="输出目录"
+                placeholder="请选择输出目录"
+                value={imageOutputDir}
+                buttonLabel="选择目录"
+                kind="folder"
+                onPick={handlePickImageOutputDir}
+              />
 
               <label className="field">
                 <span>图片格式</span>
-                <select
-                  value={imageFormat}
-                  onChange={(event) => setImageFormat(event.currentTarget.value)}
-                >
-                  <option value="png">PNG</option>
-                  <option value="jpg">JPG</option>
-                </select>
+                <div className="input-shell">
+                  <select
+                    value={imageFormat}
+                    onChange={(event) => setImageFormat(event.currentTarget.value)}
+                  >
+                    <option value="png">PNG</option>
+                    <option value="jpg">JPG</option>
+                  </select>
+                </div>
               </label>
 
               <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
@@ -320,25 +365,23 @@ function App() {
                 <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
               </div>
 
-              <label className="field">
-                <span>PDF 文件</span>
-                <div className="picker-row">
-                  <input readOnly value={extractPdfPath} placeholder="请选择一个 PDF 文件" />
-                  <button type="button" onClick={handlePickExtractPdf}>
-                    选择 PDF
-                  </button>
-                </div>
-              </label>
+              <PickerField
+                label="PDF 文件"
+                placeholder="请选择一个 PDF 文件"
+                value={extractPdfPath}
+                buttonLabel="选择 PDF"
+                kind="file"
+                onPick={handlePickExtractPdf}
+              />
 
-              <label className="field">
-                <span>输出目录</span>
-                <div className="picker-row">
-                  <input readOnly value={extractOutputDir} placeholder="请选择输出目录" />
-                  <button type="button" onClick={handlePickExtractOutputDir}>
-                    选择目录
-                  </button>
-                </div>
-              </label>
+              <PickerField
+                label="输出目录"
+                placeholder="请选择输出目录"
+                value={extractOutputDir}
+                buttonLabel="选择目录"
+                kind="folder"
+                onPick={handlePickExtractOutputDir}
+              />
 
               <button
                 className="submit-button"
@@ -354,56 +397,52 @@ function App() {
 
           <Tabs.Content className="tab-panel" value="watermark">
             <form className="tool-card" onSubmit={handleWatermarkSubmit}>
-            <div className="card-head">
-              <p className="card-kicker">Tool 03</p>
-              <h2>PDF 文字水印</h2>
-              <p>选择 PDF、输入水印文字并输出新的 PDF 文件，不覆盖原文件。</p>
-            </div>
-
-            <label className="field">
-              <span>PDF 文件</span>
-              <div className="picker-row">
-                <input readOnly value={watermarkPdfPath} placeholder="请选择一个 PDF 文件" />
-                <button type="button" onClick={handlePickWatermarkPdf}>
-                  选择 PDF
-                </button>
+              <div className="card-head">
+                <p className="card-kicker">Tool 03</p>
+                <h2>PDF 文字水印</h2>
+                <p>选择 PDF、输入水印文字并输出新的 PDF 文件，不覆盖原文件。</p>
               </div>
-            </label>
 
-            <label className="field">
-              <span>输出目录</span>
-              <div className="picker-row">
-                <input
-                  readOnly
-                  value={watermarkOutputDir}
-                  placeholder="请选择输出目录"
-                />
-                <button type="button" onClick={handlePickWatermarkOutputDir}>
-                  选择目录
-                </button>
-              </div>
-            </label>
-
-            <label className="field">
-              <span>水印文字</span>
-              <textarea
-                value={watermarkText}
-                placeholder="例如：仅供内部使用"
-                onChange={(event) => setWatermarkText(event.currentTarget.value)}
+              <PickerField
+                label="PDF 文件"
+                placeholder="请选择一个 PDF 文件"
+                value={watermarkPdfPath}
+                buttonLabel="选择 PDF"
+                kind="file"
+                onPick={handlePickWatermarkPdf}
               />
-            </label>
 
-            <button
-              className="submit-button"
-              type="submit"
-              disabled={!canWatermark || watermarkBusy}
-            >
-              {watermarkBusy ? "处理中..." : "开始生成水印 PDF"}
-            </button>
+              <PickerField
+                label="输出目录"
+                placeholder="请选择输出目录"
+                value={watermarkOutputDir}
+                buttonLabel="选择目录"
+                kind="folder"
+                onPick={handlePickWatermarkOutputDir}
+              />
 
-            <p className={`status-line ${watermarkTone}`}>
-              {watermarkMessage || "等待执行"}
-            </p>
+              <label className="field">
+                <span>水印文字</span>
+                <div className="input-shell input-shell-textarea">
+                  <textarea
+                    value={watermarkText}
+                    placeholder="例如：仅供内部使用"
+                    onChange={(event) => setWatermarkText(event.currentTarget.value)}
+                  />
+                </div>
+              </label>
+
+              <button
+                className="submit-button"
+                type="submit"
+                disabled={!canWatermark || watermarkBusy}
+              >
+                {watermarkBusy ? "处理中..." : "开始生成水印 PDF"}
+              </button>
+
+              <p className={`status-line ${watermarkTone}`}>
+                {watermarkMessage || "等待执行"}
+              </p>
             </form>
           </Tabs.Content>
         </Tabs.Root>

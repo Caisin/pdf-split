@@ -25,6 +25,10 @@ describe("App", () => {
   test("renders top tabs and shows split panel by default", () => {
     render(<App />);
 
+    expect(screen.queryByText("PDF 转图片与文字水印")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("在一个页面完成 PDF 按页导出、内嵌图片提取和文字水印生成。文件选择、目录选择和结果回显都在本地执行。"),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("tablist")).toHaveClass("tab-strip");
     expect(screen.getByRole("tab", { name: "按页导出" })).toHaveAttribute(
       "aria-selected",

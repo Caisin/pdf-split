@@ -45,34 +45,6 @@ button:disabled {
   padding: 56px 24px 72px;
 }
 
-.hero {
-  max-width: 860px;
-  margin: 0 auto 28px;
-}
-
-.eyebrow {
-  margin: 0 0 12px;
-  color: #9a4b1f;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.hero h1 {
-  margin: 0;
-  font-size: clamp(2.4rem, 4vw, 4.3rem);
-  line-height: 0.95;
-  letter-spacing: -0.05em;
-}
-
-.hero-copy {
-  max-width: 660px;
-  margin: 18px 0 0;
-  color: #544239;
-  font-size: 1.05rem;
-}
-
 .tab-shell {
   max-width: 980px;
   margin: 0 auto;
@@ -225,21 +197,48 @@ button:disabled {
   font-weight: 700;
 }
 
-.picker-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+.input-shell {
+  display: flex;
+  align-items: center;
   gap: 10px;
+  min-height: 56px;
+  padding: 6px 8px 6px 16px;
+  border: 1px solid rgba(104, 69, 46, 0.14);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(252, 247, 241, 0.92) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 12px 30px rgba(115, 79, 52, 0.08);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.input-shell:focus-within {
+  border-color: rgba(199, 99, 34, 0.55);
+  box-shadow:
+    0 0 0 4px rgba(226, 140, 74, 0.12),
+    0 16px 30px rgba(115, 79, 52, 0.12);
+}
+
+.input-shell-textarea {
+  align-items: stretch;
+  min-height: 132px;
+  padding: 10px 12px;
 }
 
 .field input,
 .field select,
 .field textarea {
   width: 100%;
-  padding: 14px 16px;
-  border: 1px solid rgba(104, 69, 46, 0.16);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #201812;
+  appearance: none;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
@@ -247,29 +246,75 @@ button:disabled {
 }
 
 .field textarea {
-  min-height: 112px;
+  min-height: 104px;
   resize: vertical;
+  line-height: 1.6;
 }
 
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
   outline: none;
-  border-color: rgba(199, 99, 34, 0.6);
-  box-shadow: 0 0 0 4px rgba(226, 140, 74, 0.14);
 }
 
-.picker-row button,
 .submit-button {
   background: linear-gradient(135deg, #a44f22 0%, #d97b3b 100%);
   color: #fffaf4;
 }
 
-.picker-row button {
-  min-width: 112px;
-  padding: 0 18px;
-  border-radius: 16px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+.picker-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #a44f22 0%, #d97b3b 100%);
+  color: #fffaf4;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 8px 16px rgba(164, 79, 34, 0.22);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+}
+
+.picker-icon-button:hover {
+  filter: saturate(1.05);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 12px 18px rgba(164, 79, 34, 0.24);
+}
+
+.picker-icon-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(226, 140, 74, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    0 12px 18px rgba(164, 79, 34, 0.24);
+}
+
+.picker-icon-button svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #a18775;
+}
+
+.field select {
+  cursor: pointer;
 }
 
 .submit-button {
