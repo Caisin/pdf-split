@@ -25,6 +25,7 @@ describe("App", () => {
   test("renders top tabs and shows split panel by default", () => {
     render(<App />);
 
+    expect(screen.getByRole("tablist")).toHaveClass("tab-strip");
     expect(screen.getByRole("tab", { name: "按页导出" })).toHaveAttribute(
       "aria-selected",
       "true",

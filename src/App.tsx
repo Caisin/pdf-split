@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
@@ -20,6 +20,44 @@ type ExtractImagesResult = {
 
 type MessageTone = "idle" | "success" | "error";
 type ToolTab = "split" | "extract" | "watermark";
+type TabItem = {
+  value: ToolTab;
+  label: string;
+  icon: ReactNode;
+};
+
+const TAB_ITEMS: TabItem[] = [
+  {
+    value: "split",
+    label: "按页导出",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="4" width="14" height="16" rx="3" />
+        <path d="M8 9h8M8 13h8M12 17v-4" />
+      </svg>
+    ),
+  },
+  {
+    value: "extract",
+    label: "提取内嵌图片",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5" width="15" height="14" rx="3" />
+        <circle cx="9" cy="10" r="1.5" />
+        <path d="M7 16l3.5-3.5 2.5 2.5 2.5-3 2.5 4" />
+      </svg>
+    ),
+  },
+  {
+    value: "watermark",
+    label: "文字水印",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 18L12 6l5 12M9 14h6" />
+      </svg>
+    ),
+  },
+];
 
 function App() {
   const [activeTab, setActiveTab] = useState<ToolTab>("split");
@@ -218,102 +256,99 @@ function App() {
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as ToolTab)}
         >
-          <Tabs.List className="tab-row" aria-label="PDF 工具切换">
-            <Tabs.Trigger className="tab-button" value="split">
-              按页导出
-            </Tabs.Trigger>
-            <Tabs.Trigger className="tab-button" value="extract">
-              提取内嵌图片
-            </Tabs.Trigger>
-            <Tabs.Trigger className="tab-button" value="watermark">
-              文字水印
-            </Tabs.Trigger>
+          <Tabs.List className="tab-strip tab-row" aria-label="PDF 工具切换">
+            {TAB_ITEMS.map((item) => (
+              <Tabs.Trigger className="tab-button" value={item.value} key={item.value}>
+                <span className="tab-icon">{item.icon}</span>
+                <span className="tab-label">{item.label}</span>
+              </Tabs.Trigger>
+            ))}
           </Tabs.List>
 
           <Tabs.Content className="tab-panel" value="split">
             <form className="tool-card" onSubmit={handleSplitSubmit}>
-            <div className="card-head">
-              <p className="card-kicker">Tool 01</p>
-              <h2>PDF 转图片</h2>
-              <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
-            </div>
-
-            <label className="field">
-              <span>PDF 文件</span>
-              <div className="picker-row">
-                <input readOnly value={imagePdfPath} placeholder="请选择一个 PDF 文件" />
-                <button type="button" onClick={handlePickImagePdf}>
-                  选择 PDF
-                </button>
+              <div className="card-head">
+                <p className="card-kicker">Tool 01</p>
+                <h2>PDF 转图片</h2>
+                <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
               </div>
-            </label>
 
-            <label className="field">
-              <span>输出目录</span>
-              <div className="picker-row">
-                <input readOnly value={imageOutputDir} placeholder="请选择输出目录" />
-                <button type="button" onClick={handlePickImageOutputDir}>
-                  选择目录
-                </button>
-              </div>
-            </label>
+              <label className="field">
+                <span>PDF 文件</span>
+                <div className="picker-row">
+                  <input readOnly value={imagePdfPath} placeholder="请选择一个 PDF 文件" />
+                  <button type="button" onClick={handlePickImagePdf}>
+                    选择 PDF
+                  </button>
+                </div>
+              </label>
 
-            <label className="field">
-              <span>图片格式</span>
-              <select
-                value={imageFormat}
-                onChange={(event) => setImageFormat(event.currentTarget.value)}
-              >
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
-              </select>
-            </label>
+              <label className="field">
+                <span>输出目录</span>
+                <div className="picker-row">
+                  <input readOnly value={imageOutputDir} placeholder="请选择输出目录" />
+                  <button type="button" onClick={handlePickImageOutputDir}>
+                    选择目录
+                  </button>
+                </div>
+              </label>
 
-            <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
-              {imageBusy ? "处理中..." : "开始导出图片"}
-            </button>
+              <label className="field">
+                <span>图片格式</span>
+                <select
+                  value={imageFormat}
+                  onChange={(event) => setImageFormat(event.currentTarget.value)}
+                >
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
+              </label>
 
-            <p className={`status-line ${imageTone}`}>{imageMessage || "等待执行"}</p>
+              <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
+                {imageBusy ? "处理中..." : "开始导出图片"}
+              </button>
+
+              <p className={`status-line ${imageTone}`}>{imageMessage || "等待执行"}</p>
             </form>
           </Tabs.Content>
 
           <Tabs.Content className="tab-panel" value="extract">
             <form className="tool-card" onSubmit={handleExtractSubmit}>
-            <div className="card-head">
-              <p className="card-kicker">Tool 02</p>
-              <h2>提取 PDF 内嵌图片</h2>
-              <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
-            </div>
-
-            <label className="field">
-              <span>PDF 文件</span>
-              <div className="picker-row">
-                <input readOnly value={extractPdfPath} placeholder="请选择一个 PDF 文件" />
-                <button type="button" onClick={handlePickExtractPdf}>
-                  选择 PDF
-                </button>
+              <div className="card-head">
+                <p className="card-kicker">Tool 02</p>
+                <h2>提取 PDF 内嵌图片</h2>
+                <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
               </div>
-            </label>
 
-            <label className="field">
-              <span>输出目录</span>
-              <div className="picker-row">
-                <input readOnly value={extractOutputDir} placeholder="请选择输出目录" />
-                <button type="button" onClick={handlePickExtractOutputDir}>
-                  选择目录
-                </button>
-              </div>
-            </label>
+              <label className="field">
+                <span>PDF 文件</span>
+                <div className="picker-row">
+                  <input readOnly value={extractPdfPath} placeholder="请选择一个 PDF 文件" />
+                  <button type="button" onClick={handlePickExtractPdf}>
+                    选择 PDF
+                  </button>
+                </div>
+              </label>
 
-            <button
-              className="submit-button"
-              type="submit"
-              disabled={!canExtract || extractBusy}
-            >
-              {extractBusy ? "处理中..." : "开始提取内嵌图片"}
-            </button>
+              <label className="field">
+                <span>输出目录</span>
+                <div className="picker-row">
+                  <input readOnly value={extractOutputDir} placeholder="请选择输出目录" />
+                  <button type="button" onClick={handlePickExtractOutputDir}>
+                    选择目录
+                  </button>
+                </div>
+              </label>
 
-            <p className={`status-line ${extractTone}`}>{extractMessage || "等待执行"}</p>
+              <button
+                className="submit-button"
+                type="submit"
+                disabled={!canExtract || extractBusy}
+              >
+                {extractBusy ? "处理中..." : "开始提取内嵌图片"}
+              </button>
+
+              <p className={`status-line ${extractTone}`}>{extractMessage || "等待执行"}</p>
             </form>
           </Tabs.Content>
 
