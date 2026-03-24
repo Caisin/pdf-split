@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::path::MAIN_SEPARATOR;
+use std::path::Path;
 
 use kx_pdf::Pdfs;
 use tauri::WebviewWindow;
@@ -60,15 +60,18 @@ pub fn add_text_watermark(
     input_path: String,
     output_dir: String,
     watermark_text: String,
+    watermark_font_size: f32,
 ) -> Result<WatermarkPdfResult, String> {
     let input_path = require_value("PDF 文件", input_path)?;
     let output_dir = require_value("输出目录", output_dir)?;
     let watermark_text = require_value("水印文字", watermark_text)?;
+    let watermark_font_size = require_positive_number("水印字号", watermark_font_size)?;
 
     let output_pdf_path = Pdfs::add_text_watermark(
         &input_path,
         Path::new(&output_dir),
         &watermark_text,
+        watermark_font_size,
     )
     .map_err(|err| err.to_string())?;
 
@@ -96,6 +99,14 @@ fn require_value(label: &str, value: String) -> Result<String, String> {
     }
 
     Ok(trimmed)
+}
+
+fn require_positive_number(label: &str, value: f32) -> Result<f32, String> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(format!("{label}必须大于 0"));
+    }
+
+    Ok(value)
 }
 
 fn dialog_path_to_string(file_path: FilePath) -> Result<String, String> {
@@ -127,10 +138,18 @@ mod tests {
 
     #[test]
     fn watermark_command_rejects_empty_text() {
-        let err = add_text_watermark("a.pdf".into(), "/tmp".into(), "".into())
+        let err = add_text_watermark("a.pdf".into(), "/tmp".into(), "".into(), 28.0)
             .expect_err("empty watermark text should fail");
 
         assert!(err.contains("水印文字"));
+    }
+
+    #[test]
+    fn watermark_command_rejects_non_positive_font_size() {
+        let err = add_text_watermark("a.pdf".into(), "/tmp".into(), "wm".into(), 0.0)
+            .expect_err("non-positive font size should fail");
+
+        assert!(err.contains("水印字号"));
     }
 
     #[test]

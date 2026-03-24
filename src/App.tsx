@@ -113,6 +113,7 @@ function PickerField({
 }
 
 function App() {
+  const defaultWatermarkText = "仅限xxx使用,它用或复印无效";
   const [activeTab, setActiveTab] = useState<ToolTab>("split");
   const [imagePdfPath, setImagePdfPath] = useState("");
   const [imageOutputDir, setImageOutputDir] = useState("");
@@ -123,7 +124,8 @@ function App() {
 
   const [watermarkPdfPath, setWatermarkPdfPath] = useState("");
   const [watermarkOutputDir, setWatermarkOutputDir] = useState("");
-  const [watermarkText, setWatermarkText] = useState("");
+  const [watermarkText, setWatermarkText] = useState(defaultWatermarkText);
+  const [watermarkFontSize, setWatermarkFontSize] = useState(28);
   const [watermarkBusy, setWatermarkBusy] = useState(false);
   const [watermarkMessage, setWatermarkMessage] = useState("");
   const [watermarkTone, setWatermarkTone] = useState<MessageTone>("idle");
@@ -138,7 +140,9 @@ function App() {
   const canWatermark =
     watermarkPdfPath !== "" &&
     watermarkOutputDir !== "" &&
-    watermarkText.trim() !== "";
+    watermarkText.trim() !== "" &&
+    Number.isFinite(watermarkFontSize) &&
+    watermarkFontSize > 0;
   const canExtract = extractPdfPath !== "" && extractOutputDir !== "";
 
   async function pickPdfFile() {
@@ -257,6 +261,7 @@ function App() {
         inputPath: watermarkPdfPath,
         outputDir: watermarkOutputDir,
         watermarkText,
+        watermarkFontSize,
       });
       setWatermarkTone("success");
       setWatermarkMessage(`完成：输出文件 ${result.outputPdfPath}`);
@@ -426,8 +431,26 @@ function App() {
                 <div className="input-shell input-shell-textarea">
                   <textarea
                     value={watermarkText}
-                    placeholder="例如：仅供内部使用"
+                    placeholder={defaultWatermarkText}
                     onChange={(event) => setWatermarkText(event.currentTarget.value)}
+                  />
+                </div>
+              </label>
+
+              <label className="field">
+                <span>水印字号</span>
+                <div className="input-shell">
+                  <input
+                    aria-label="水印字号"
+                    type="number"
+                    min={12}
+                    max={72}
+                    step={1}
+                    value={watermarkFontSize}
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.valueAsNumber;
+                      setWatermarkFontSize(Number.isFinite(nextValue) ? nextValue : 0);
+                    }}
                   />
                 </div>
               </label>

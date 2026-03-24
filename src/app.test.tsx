@@ -3,12 +3,13 @@ import { describe, expect, test, vi } from "vitest";
 
 import App from "./App";
 
-const { openMock } = vi.hoisted(() => ({
+const { openMock, invokeMock } = vi.hoisted(() => ({
   openMock: vi.fn(),
+  invokeMock: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: invokeMock,
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -53,9 +54,12 @@ describe("App", () => {
     ).toBeDisabled();
   });
 
-  test("disables watermark submit when watermark text is empty", () => {
+  test("disables watermark submit when watermark font size is invalid", () => {
     render(<App />);
     activateTab("文字水印");
+    fireEvent.change(screen.getByLabelText("水印字号"), {
+      target: { value: "0", valueAsNumber: 0 },
+    });
 
     expect(
       screen.getByRole("button", { name: "开始生成水印 PDF" }),
@@ -99,5 +103,15 @@ describe("App", () => {
     activateTab("文字水印");
     expect(screen.getByText("PDF 文字水印")).toBeInTheDocument();
     expect(screen.queryByText("提取 PDF 内嵌图片")).not.toBeInTheDocument();
+  });
+
+  test("prefills watermark text and exposes font size control", () => {
+    render(<App />);
+    activateTab("文字水印");
+
+    expect(
+      screen.getByDisplayValue("仅限xxx使用,它用或复印无效"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("水印字号")).toHaveValue(28);
   });
 });
