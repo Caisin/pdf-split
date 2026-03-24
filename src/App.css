@@ -78,16 +78,22 @@ button:disabled {
   margin: 0 auto;
 }
 
+.tabs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .tab-row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 18px;
 }
 
 .tab-button {
   padding: 12px 18px;
   border-radius: 999px;
+  border: 0;
   background: rgba(255, 250, 245, 0.82);
   color: #7f5b45;
   box-shadow: inset 0 0 0 1px rgba(104, 69, 46, 0.12);
@@ -97,12 +103,23 @@ button:disabled {
     background 0.18s ease;
 }
 
-.tab-button.active {
+.tab-button[data-state="active"] {
   background: linear-gradient(135deg, #a44f22 0%, #d97b3b 100%);
   color: #fff8f1;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
     0 12px 24px rgba(180, 99, 45, 0.22);
+}
+
+.tab-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(226, 140, 74, 0.18),
+    inset 0 0 0 1px rgba(199, 99, 34, 0.36);
+}
+
+.tab-panel {
+  outline: none;
 }
 
 .tool-card {

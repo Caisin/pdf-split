@@ -1,3 +1,4 @@
+import * as Tabs from "@radix-ui/react-tabs";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -212,53 +213,25 @@ function App() {
       </section>
 
       <section className="tab-shell">
-        <div className="tab-row" role="tablist" aria-label="PDF 工具切换">
-          <button
-            id="pdf-tool-tab-split"
-            className={`tab-button ${activeTab === "split" ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "split"}
-            aria-controls="pdf-tool-panel-split"
-            tabIndex={activeTab === "split" ? 0 : -1}
-            onClick={() => setActiveTab("split")}
-          >
-            按页导出
-          </button>
-          <button
-            id="pdf-tool-tab-extract"
-            className={`tab-button ${activeTab === "extract" ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "extract"}
-            aria-controls="pdf-tool-panel-extract"
-            tabIndex={activeTab === "extract" ? 0 : -1}
-            onClick={() => setActiveTab("extract")}
-          >
-            提取内嵌图片
-          </button>
-          <button
-            id="pdf-tool-tab-watermark"
-            className={`tab-button ${activeTab === "watermark" ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "watermark"}
-            aria-controls="pdf-tool-panel-watermark"
-            tabIndex={activeTab === "watermark" ? 0 : -1}
-            onClick={() => setActiveTab("watermark")}
-          >
-            文字水印
-          </button>
-        </div>
+        <Tabs.Root
+          className="tabs-root"
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as ToolTab)}
+        >
+          <Tabs.List className="tab-row" aria-label="PDF 工具切换">
+            <Tabs.Trigger className="tab-button" value="split">
+              按页导出
+            </Tabs.Trigger>
+            <Tabs.Trigger className="tab-button" value="extract">
+              提取内嵌图片
+            </Tabs.Trigger>
+            <Tabs.Trigger className="tab-button" value="watermark">
+              文字水印
+            </Tabs.Trigger>
+          </Tabs.List>
 
-        {activeTab === "split" && (
-          <form
-            id="pdf-tool-panel-split"
-            className="tool-card"
-            role="tabpanel"
-            aria-labelledby="pdf-tool-tab-split"
-            onSubmit={handleSplitSubmit}
-          >
+          <Tabs.Content className="tab-panel" value="split">
+            <form className="tool-card" onSubmit={handleSplitSubmit}>
             <div className="card-head">
               <p className="card-kicker">Tool 01</p>
               <h2>PDF 转图片</h2>
@@ -301,17 +274,11 @@ function App() {
             </button>
 
             <p className={`status-line ${imageTone}`}>{imageMessage || "等待执行"}</p>
-          </form>
-        )}
+            </form>
+          </Tabs.Content>
 
-        {activeTab === "extract" && (
-          <form
-            id="pdf-tool-panel-extract"
-            className="tool-card"
-            role="tabpanel"
-            aria-labelledby="pdf-tool-tab-extract"
-            onSubmit={handleExtractSubmit}
-          >
+          <Tabs.Content className="tab-panel" value="extract">
+            <form className="tool-card" onSubmit={handleExtractSubmit}>
             <div className="card-head">
               <p className="card-kicker">Tool 02</p>
               <h2>提取 PDF 内嵌图片</h2>
@@ -347,17 +314,11 @@ function App() {
             </button>
 
             <p className={`status-line ${extractTone}`}>{extractMessage || "等待执行"}</p>
-          </form>
-        )}
+            </form>
+          </Tabs.Content>
 
-        {activeTab === "watermark" && (
-          <form
-            id="pdf-tool-panel-watermark"
-            className="tool-card"
-            role="tabpanel"
-            aria-labelledby="pdf-tool-tab-watermark"
-            onSubmit={handleWatermarkSubmit}
-          >
+          <Tabs.Content className="tab-panel" value="watermark">
+            <form className="tool-card" onSubmit={handleWatermarkSubmit}>
             <div className="card-head">
               <p className="card-kicker">Tool 03</p>
               <h2>PDF 文字水印</h2>
@@ -408,8 +369,9 @@ function App() {
             <p className={`status-line ${watermarkTone}`}>
               {watermarkMessage || "等待执行"}
             </p>
-          </form>
-        )}
+            </form>
+          </Tabs.Content>
+        </Tabs.Root>
       </section>
     </main>
   );
