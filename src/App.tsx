@@ -18,8 +18,10 @@ type ExtractImagesResult = {
 };
 
 type MessageTone = "idle" | "success" | "error";
+type ToolTab = "split" | "extract" | "watermark";
 
 function App() {
+  const [activeTab, setActiveTab] = useState<ToolTab>("split");
   const [imagePdfPath, setImagePdfPath] = useState("");
   const [imageOutputDir, setImageOutputDir] = useState("");
   const [imageFormat, setImageFormat] = useState("png");
@@ -209,138 +211,205 @@ function App() {
         </p>
       </section>
 
-      <section className="tool-grid">
-        <form className="tool-card" onSubmit={handleSplitSubmit}>
-          <div className="card-head">
-            <p className="card-kicker">Tool 01</p>
-            <h2>PDF 转图片</h2>
-            <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
-          </div>
+      <section className="tab-shell">
+        <div className="tab-row" role="tablist" aria-label="PDF 工具切换">
+          <button
+            id="pdf-tool-tab-split"
+            className={`tab-button ${activeTab === "split" ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "split"}
+            aria-controls="pdf-tool-panel-split"
+            tabIndex={activeTab === "split" ? 0 : -1}
+            onClick={() => setActiveTab("split")}
+          >
+            按页导出
+          </button>
+          <button
+            id="pdf-tool-tab-extract"
+            className={`tab-button ${activeTab === "extract" ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "extract"}
+            aria-controls="pdf-tool-panel-extract"
+            tabIndex={activeTab === "extract" ? 0 : -1}
+            onClick={() => setActiveTab("extract")}
+          >
+            提取内嵌图片
+          </button>
+          <button
+            id="pdf-tool-tab-watermark"
+            className={`tab-button ${activeTab === "watermark" ? "active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "watermark"}
+            aria-controls="pdf-tool-panel-watermark"
+            tabIndex={activeTab === "watermark" ? 0 : -1}
+            onClick={() => setActiveTab("watermark")}
+          >
+            文字水印
+          </button>
+        </div>
 
-          <label className="field">
-            <span>PDF 文件</span>
-            <div className="picker-row">
-              <input readOnly value={imagePdfPath} placeholder="请选择一个 PDF 文件" />
-              <button type="button" onClick={handlePickImagePdf}>
-                选择 PDF
-              </button>
+        {activeTab === "split" && (
+          <form
+            id="pdf-tool-panel-split"
+            className="tool-card"
+            role="tabpanel"
+            aria-labelledby="pdf-tool-tab-split"
+            onSubmit={handleSplitSubmit}
+          >
+            <div className="card-head">
+              <p className="card-kicker">Tool 01</p>
+              <h2>PDF 转图片</h2>
+              <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
             </div>
-          </label>
 
-          <label className="field">
-            <span>输出目录</span>
-            <div className="picker-row">
-              <input readOnly value={imageOutputDir} placeholder="请选择输出目录" />
-              <button type="button" onClick={handlePickImageOutputDir}>
-                选择目录
-              </button>
+            <label className="field">
+              <span>PDF 文件</span>
+              <div className="picker-row">
+                <input readOnly value={imagePdfPath} placeholder="请选择一个 PDF 文件" />
+                <button type="button" onClick={handlePickImagePdf}>
+                  选择 PDF
+                </button>
+              </div>
+            </label>
+
+            <label className="field">
+              <span>输出目录</span>
+              <div className="picker-row">
+                <input readOnly value={imageOutputDir} placeholder="请选择输出目录" />
+                <button type="button" onClick={handlePickImageOutputDir}>
+                  选择目录
+                </button>
+              </div>
+            </label>
+
+            <label className="field">
+              <span>图片格式</span>
+              <select
+                value={imageFormat}
+                onChange={(event) => setImageFormat(event.currentTarget.value)}
+              >
+                <option value="png">PNG</option>
+                <option value="jpg">JPG</option>
+              </select>
+            </label>
+
+            <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
+              {imageBusy ? "处理中..." : "开始导出图片"}
+            </button>
+
+            <p className={`status-line ${imageTone}`}>{imageMessage || "等待执行"}</p>
+          </form>
+        )}
+
+        {activeTab === "extract" && (
+          <form
+            id="pdf-tool-panel-extract"
+            className="tool-card"
+            role="tabpanel"
+            aria-labelledby="pdf-tool-tab-extract"
+            onSubmit={handleExtractSubmit}
+          >
+            <div className="card-head">
+              <p className="card-kicker">Tool 02</p>
+              <h2>提取 PDF 内嵌图片</h2>
+              <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
             </div>
-          </label>
 
-          <label className="field">
-            <span>图片格式</span>
-            <select
-              value={imageFormat}
-              onChange={(event) => setImageFormat(event.currentTarget.value)}
+            <label className="field">
+              <span>PDF 文件</span>
+              <div className="picker-row">
+                <input readOnly value={extractPdfPath} placeholder="请选择一个 PDF 文件" />
+                <button type="button" onClick={handlePickExtractPdf}>
+                  选择 PDF
+                </button>
+              </div>
+            </label>
+
+            <label className="field">
+              <span>输出目录</span>
+              <div className="picker-row">
+                <input readOnly value={extractOutputDir} placeholder="请选择输出目录" />
+                <button type="button" onClick={handlePickExtractOutputDir}>
+                  选择目录
+                </button>
+              </div>
+            </label>
+
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={!canExtract || extractBusy}
             >
-              <option value="png">PNG</option>
-              <option value="jpg">JPG</option>
-            </select>
-          </label>
+              {extractBusy ? "处理中..." : "开始提取内嵌图片"}
+            </button>
 
-          <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
-            {imageBusy ? "处理中..." : "开始导出图片"}
-          </button>
+            <p className={`status-line ${extractTone}`}>{extractMessage || "等待执行"}</p>
+          </form>
+        )}
 
-          <p className={`status-line ${imageTone}`}>{imageMessage || "等待执行"}</p>
-        </form>
-
-        <form className="tool-card" onSubmit={handleExtractSubmit}>
-          <div className="card-head">
-            <p className="card-kicker">Tool 02</p>
-            <h2>提取 PDF 内嵌图片</h2>
-            <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
-          </div>
-
-          <label className="field">
-            <span>PDF 文件</span>
-            <div className="picker-row">
-              <input readOnly value={extractPdfPath} placeholder="请选择一个 PDF 文件" />
-              <button type="button" onClick={handlePickExtractPdf}>
-                选择 PDF
-              </button>
-            </div>
-          </label>
-
-          <label className="field">
-            <span>输出目录</span>
-            <div className="picker-row">
-              <input readOnly value={extractOutputDir} placeholder="请选择输出目录" />
-              <button type="button" onClick={handlePickExtractOutputDir}>
-                选择目录
-              </button>
-            </div>
-          </label>
-
-          <button
-            className="submit-button"
-            type="submit"
-            disabled={!canExtract || extractBusy}
+        {activeTab === "watermark" && (
+          <form
+            id="pdf-tool-panel-watermark"
+            className="tool-card"
+            role="tabpanel"
+            aria-labelledby="pdf-tool-tab-watermark"
+            onSubmit={handleWatermarkSubmit}
           >
-            {extractBusy ? "处理中..." : "开始提取内嵌图片"}
-          </button>
-
-          <p className={`status-line ${extractTone}`}>{extractMessage || "等待执行"}</p>
-        </form>
-
-        <form className="tool-card" onSubmit={handleWatermarkSubmit}>
-          <div className="card-head">
-            <p className="card-kicker">Tool 03</p>
-            <h2>PDF 文字水印</h2>
-            <p>选择 PDF、输入水印文字并输出新的 PDF 文件，不覆盖原文件。</p>
-          </div>
-
-          <label className="field">
-            <span>PDF 文件</span>
-            <div className="picker-row">
-              <input readOnly value={watermarkPdfPath} placeholder="请选择一个 PDF 文件" />
-              <button type="button" onClick={handlePickWatermarkPdf}>
-                选择 PDF
-              </button>
+            <div className="card-head">
+              <p className="card-kicker">Tool 03</p>
+              <h2>PDF 文字水印</h2>
+              <p>选择 PDF、输入水印文字并输出新的 PDF 文件，不覆盖原文件。</p>
             </div>
-          </label>
 
-          <label className="field">
-            <span>输出目录</span>
-            <div className="picker-row">
-              <input readOnly value={watermarkOutputDir} placeholder="请选择输出目录" />
-              <button type="button" onClick={handlePickWatermarkOutputDir}>
-                选择目录
-              </button>
-            </div>
-          </label>
+            <label className="field">
+              <span>PDF 文件</span>
+              <div className="picker-row">
+                <input readOnly value={watermarkPdfPath} placeholder="请选择一个 PDF 文件" />
+                <button type="button" onClick={handlePickWatermarkPdf}>
+                  选择 PDF
+                </button>
+              </div>
+            </label>
 
-          <label className="field">
-            <span>水印文字</span>
-            <textarea
-              value={watermarkText}
-              placeholder="例如：仅供内部使用"
-              onChange={(event) => setWatermarkText(event.currentTarget.value)}
-            />
-          </label>
+            <label className="field">
+              <span>输出目录</span>
+              <div className="picker-row">
+                <input
+                  readOnly
+                  value={watermarkOutputDir}
+                  placeholder="请选择输出目录"
+                />
+                <button type="button" onClick={handlePickWatermarkOutputDir}>
+                  选择目录
+                </button>
+              </div>
+            </label>
 
-          <button
-            className="submit-button"
-            type="submit"
-            disabled={!canWatermark || watermarkBusy}
-          >
-            {watermarkBusy ? "处理中..." : "开始生成水印 PDF"}
-          </button>
+            <label className="field">
+              <span>水印文字</span>
+              <textarea
+                value={watermarkText}
+                placeholder="例如：仅供内部使用"
+                onChange={(event) => setWatermarkText(event.currentTarget.value)}
+              />
+            </label>
 
-          <p className={`status-line ${watermarkTone}`}>
-            {watermarkMessage || "等待执行"}
-          </p>
-        </form>
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={!canWatermark || watermarkBusy}
+            >
+              {watermarkBusy ? "处理中..." : "开始生成水印 PDF"}
+            </button>
+
+            <p className={`status-line ${watermarkTone}`}>
+              {watermarkMessage || "等待执行"}
+            </p>
+          </form>
+        )}
       </section>
     </main>
   );
