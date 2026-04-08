@@ -167,6 +167,43 @@ button:disabled {
   backdrop-filter: blur(14px);
 }
 
+.tool-card-dense {
+  gap: 14px;
+  padding: 20px;
+}
+
+.tool-card-dense .card-head h2 {
+  margin-bottom: 6px;
+  font-size: 1.42rem;
+}
+
+.tool-card-dense .field {
+  gap: 6px;
+}
+
+.tool-card-dense .input-shell {
+  min-height: 50px;
+  padding: 5px 8px 5px 14px;
+}
+
+.tool-card-dense .input-shell-textarea {
+  min-height: 108px;
+  padding: 8px 10px;
+}
+
+.tool-card-dense .field textarea {
+  min-height: 78px;
+}
+
+.tool-card-dense .submit-button {
+  padding: 13px 18px;
+}
+
+.tool-card-dense .status-line {
+  min-height: 20px;
+  font-size: 0.9rem;
+}
+
 .card-head h2 {
   margin: 4px 0 8px;
   font-size: 1.6rem;
@@ -255,6 +292,45 @@ button:disabled {
 .field select:focus,
 .field textarea:focus {
   outline: none;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-grid-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.progress-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-stack progress {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(177, 125, 85, 0.16);
+}
+
+.progress-caption {
+  margin: 0;
+  color: #7c6759;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .submit-button {
@@ -362,7 +438,26 @@ button:disabled {
     font-size: 0.9rem;
   }
 
-  .picker-row {
+  .picker-row,
+  .picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-grid-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .tool-card-dense {
+    padding: 18px;
+  }
+
+  .field-grid-compact {
     grid-template-columns: 1fr;
   }
 }

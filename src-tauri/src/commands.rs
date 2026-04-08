@@ -2,10 +2,15 @@ use std::path::MAIN_SEPARATOR;
 use std::path::Path;
 
 use kx_pdf::Pdfs;
-use tauri::WebviewWindow;
+use tauri::{Emitter, EventTarget, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
-use crate::models::{ExtractImagesResult, SplitPdfResult, WatermarkPdfResult};
+use crate::models::{
+    BatchImageWatermarkProgressPayload, BatchImageWatermarkResult, ExtractImagesResult,
+    SplitPdfResult, WatermarkPdfResult,
+};
+
+const BATCH_IMAGE_WATERMARK_PROGRESS_EVENT: &str = "batch-image-watermark-progress";
 
 #[tauri::command]
 pub fn select_pdf_file(window: WebviewWindow) -> Result<Option<String>, String> {
@@ -92,6 +97,97 @@ pub fn extract_embedded_images(
     Ok(ExtractImagesResult { output_dir })
 }
 
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_text_watermark_to_images(
+    window: WebviewWindow,
+    input_dir: String,
+    output_dir: String,
+    watermark_text: String,
+    watermark_font_size: f32,
+    watermark_opacity: f32,
+    watermark_rotation: f32,
+    watermark_horizontal_spacing: u32,
+    watermark_vertical_spacing: u32,
+) -> Result<BatchImageWatermarkResult, String> {
+    let window_label = window.label().to_string();
+    let app_handle = window.app_handle().clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_batch_image_watermark(
+            input_dir,
+            output_dir,
+            watermark_text,
+            watermark_font_size,
+            watermark_opacity,
+            watermark_rotation,
+            watermark_horizontal_spacing,
+            watermark_vertical_spacing,
+            |progress| {
+                let _ = app_handle.emit_to(
+                    EventTarget::webview_window(window_label.clone()),
+                    BATCH_IMAGE_WATERMARK_PROGRESS_EVENT,
+                    BatchImageWatermarkProgressPayload {
+                        scanned_file_count: progress.scanned_file_count,
+                        processed_file_count: progress.processed_file_count,
+                        success_count: progress.success_count,
+                        failure_count: progress.failure_count,
+                        current_file: progress.current_file,
+                    },
+                );
+            },
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_batch_image_watermark<F>(
+    input_dir: String,
+    output_dir: String,
+    watermark_text: String,
+    watermark_font_size: f32,
+    watermark_opacity: f32,
+    watermark_rotation: f32,
+    watermark_horizontal_spacing: u32,
+    watermark_vertical_spacing: u32,
+    on_progress: F,
+) -> Result<BatchImageWatermarkResult, String>
+where
+    F: FnMut(kx_pdf::BatchImageWatermarkProgress),
+{
+    let input_dir = require_value("输入目录", input_dir)?;
+    let output_dir = require_value("输出目录", output_dir)?;
+    ensure_distinct_directories(&input_dir, &output_dir)?;
+    let watermark_text = require_value("水印文字", watermark_text)?;
+    let watermark_font_size = require_positive_number("水印字号", watermark_font_size)?;
+    let watermark_opacity = require_percentage("水印透明度", watermark_opacity)?;
+    let watermark_rotation = require_finite_number("水印角度", watermark_rotation)?;
+    let watermark_horizontal_spacing = require_spacing("横向间距", watermark_horizontal_spacing)?;
+    let watermark_vertical_spacing = require_spacing("纵向间距", watermark_vertical_spacing)?;
+
+    let result = Pdfs::add_text_watermark_to_images_with_progress(
+        Path::new(&input_dir),
+        Path::new(&output_dir),
+        &watermark_text,
+        watermark_font_size,
+        watermark_opacity / 100.0,
+        watermark_rotation,
+        watermark_horizontal_spacing,
+        watermark_vertical_spacing,
+        on_progress,
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(BatchImageWatermarkResult {
+        scanned_file_count: result.scanned_file_count,
+        success_count: result.success_count,
+        failure_count: result.failure_count,
+        output_dir,
+    })
+}
+
 fn require_value(label: &str, value: String) -> Result<String, String> {
     let trimmed = value.trim().to_string();
     if trimmed.is_empty() {
@@ -107,6 +203,42 @@ fn require_positive_number(label: &str, value: f32) -> Result<f32, String> {
     }
 
     Ok(value)
+}
+
+fn require_percentage(label: &str, value: f32) -> Result<f32, String> {
+    if !value.is_finite() || value <= 0.0 || value > 100.0 {
+        return Err(format!("{label}必须在 0 到 100 之间"));
+    }
+
+    Ok(value)
+}
+
+fn require_finite_number(label: &str, value: f32) -> Result<f32, String> {
+    if !value.is_finite() {
+        return Err(format!("{label}必须是有效数字"));
+    }
+
+    Ok(value)
+}
+
+fn require_spacing(label: &str, value: u32) -> Result<u32, String> {
+    if value > 4096 {
+        return Err(format!("{label}不能大于 4096"));
+    }
+
+    Ok(value)
+}
+
+fn ensure_distinct_directories(input_dir: &str, output_dir: &str) -> Result<(), String> {
+    if normalize_directory_for_compare(input_dir) == normalize_directory_for_compare(output_dir) {
+        return Err("输入目录与输出目录不能相同".to_string());
+    }
+
+    Ok(())
+}
+
+fn normalize_directory_for_compare(path: &str) -> &str {
+    path.trim_end_matches(['/', '\\'])
 }
 
 fn dialog_path_to_string(file_path: FilePath) -> Result<String, String> {
@@ -126,7 +258,9 @@ fn ensure_trailing_separator(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{add_text_watermark, extract_embedded_images, split_pdf_to_images};
+    use super::{
+        add_text_watermark, extract_embedded_images, run_batch_image_watermark, split_pdf_to_images,
+    };
 
     #[test]
     fn split_command_rejects_empty_input_path() {
@@ -158,5 +292,59 @@ mod tests {
             .expect_err("empty output dir should fail");
 
         assert!(err.contains("输出目录"));
+    }
+
+    #[test]
+    fn batch_image_watermark_command_rejects_same_input_and_output_dir() {
+        let err = run_batch_image_watermark(
+            "/tmp/images".into(),
+            "/tmp/images/".into(),
+            "wm".into(),
+            28.0,
+            18.0,
+            -35.0,
+            180,
+            120,
+            |_| {},
+        )
+        .expect_err("same directories should fail");
+
+        assert!(err.contains("输入目录与输出目录不能相同"));
+    }
+
+    #[test]
+    fn batch_image_watermark_command_rejects_invalid_opacity() {
+        let err = run_batch_image_watermark(
+            "/tmp/in".into(),
+            "/tmp/out".into(),
+            "wm".into(),
+            28.0,
+            0.0,
+            -35.0,
+            180,
+            120,
+            |_| {},
+        )
+        .expect_err("zero opacity should fail");
+
+        assert!(err.contains("水印透明度"));
+    }
+
+    #[test]
+    fn batch_image_watermark_command_rejects_too_large_spacing() {
+        let err = run_batch_image_watermark(
+            "/tmp/in".into(),
+            "/tmp/out".into(),
+            "wm".into(),
+            28.0,
+            18.0,
+            -35.0,
+            4_097,
+            120,
+            |_| {},
+        )
+        .expect_err("too large spacing should fail");
+
+        assert!(err.contains("横向间距"));
     }
 }
