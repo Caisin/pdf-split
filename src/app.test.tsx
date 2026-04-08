@@ -93,6 +93,33 @@ describe("App", () => {
   });
 
 
+  test("submits pdf watermark payload through tauri invoke", async () => {
+    openMock
+      .mockResolvedValueOnce("/tmp/demo.pdf")
+      .mockResolvedValueOnce("/tmp/output-dir");
+    invokeMock.mockResolvedValue({ outputPdfPath: "/tmp/output-dir/demo-watermarked.pdf" });
+
+    render(<App />);
+    activateTab("文字水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择 PDF" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
+    await screen.findByDisplayValue("/tmp/demo.pdf");
+    await screen.findByDisplayValue("/tmp/output-dir");
+
+    fireEvent.click(screen.getByRole("button", { name: "开始生成水印 PDF" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("add_text_watermark", {
+      payload: {
+        inputPath: "/tmp/demo.pdf",
+        outputDir: "/tmp/output-dir",
+        watermarkText: "仅限xxx使用,它用或复印无效",
+        watermarkFontSize: 28,
+      },
+    });
+  });
+
+
 
   test("renders batch image watermark section and keeps submit disabled by default", () => {
     render(<App />);

@@ -1,13 +1,14 @@
 use std::path::MAIN_SEPARATOR;
 use std::path::Path;
 
-use kx_pdf::Pdfs;
+use kx_image::{BatchImageWatermarkOptions, BatchImageWatermarkProgress, Imgs};
+use kx_pdf::{PdfTextWatermarkOptions, Pdfs};
 use tauri::{Emitter, EventTarget, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::models::{
-    BatchImageWatermarkProgressPayload, BatchImageWatermarkResult, ExtractImagesResult,
-    SplitPdfResult, WatermarkPdfResult,
+    BatchImageWatermarkInput, BatchImageWatermarkProgressPayload, BatchImageWatermarkResult,
+    ExtractImagesResult, PdfTextWatermarkInput, SplitPdfResult, WatermarkPdfResult,
 };
 
 const BATCH_IMAGE_WATERMARK_PROGRESS_EVENT: &str = "batch-image-watermark-progress";
@@ -61,24 +62,18 @@ pub fn split_pdf_to_images(
 }
 
 #[tauri::command]
-pub fn add_text_watermark(
-    input_path: String,
-    output_dir: String,
-    watermark_text: String,
-    watermark_font_size: f32,
-) -> Result<WatermarkPdfResult, String> {
-    let input_path = require_value("PDF 文件", input_path)?;
-    let output_dir = require_value("输出目录", output_dir)?;
-    let watermark_text = require_value("水印文字", watermark_text)?;
-    let watermark_font_size = require_positive_number("水印字号", watermark_font_size)?;
+pub fn add_text_watermark(payload: PdfTextWatermarkInput) -> Result<WatermarkPdfResult, String> {
+    let input_path = require_value("PDF 文件", payload.input_path)?;
+    let output_dir = require_value("输出目录", payload.output_dir)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let watermark_font_size = require_positive_number("水印字号", payload.watermark_font_size)?;
+    let options = PdfTextWatermarkOptions {
+        watermark_text: &watermark_text,
+        font_size: watermark_font_size,
+    };
 
-    let output_pdf_path = Pdfs::add_text_watermark(
-        &input_path,
-        Path::new(&output_dir),
-        &watermark_text,
-        watermark_font_size,
-    )
-    .map_err(|err| err.to_string())?;
+    let output_pdf_path = Pdfs::add_text_watermark(&input_path, Path::new(&output_dir), &options)
+        .map_err(|err| err.to_string())?;
 
     Ok(WatermarkPdfResult { output_pdf_path })
 }
@@ -98,84 +93,63 @@ pub fn extract_embedded_images(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn add_text_watermark_to_images(
     window: WebviewWindow,
-    input_dir: String,
-    output_dir: String,
-    watermark_text: String,
-    watermark_font_size: f32,
-    watermark_opacity: f32,
-    watermark_rotation: f32,
-    watermark_horizontal_spacing: u32,
-    watermark_vertical_spacing: u32,
+    payload: BatchImageWatermarkInput,
 ) -> Result<BatchImageWatermarkResult, String> {
     let window_label = window.label().to_string();
     let app_handle = window.app_handle().clone();
 
     tauri::async_runtime::spawn_blocking(move || {
-        run_batch_image_watermark(
-            input_dir,
-            output_dir,
-            watermark_text,
-            watermark_font_size,
-            watermark_opacity,
-            watermark_rotation,
-            watermark_horizontal_spacing,
-            watermark_vertical_spacing,
-            |progress| {
-                let _ = app_handle.emit_to(
-                    EventTarget::webview_window(window_label.clone()),
-                    BATCH_IMAGE_WATERMARK_PROGRESS_EVENT,
-                    BatchImageWatermarkProgressPayload {
-                        scanned_file_count: progress.scanned_file_count,
-                        processed_file_count: progress.processed_file_count,
-                        success_count: progress.success_count,
-                        failure_count: progress.failure_count,
-                        current_file: progress.current_file,
-                    },
-                );
-            },
-        )
+        run_batch_image_watermark(payload, |progress| {
+            let _ = app_handle.emit_to(
+                EventTarget::webview_window(window_label.clone()),
+                BATCH_IMAGE_WATERMARK_PROGRESS_EVENT,
+                BatchImageWatermarkProgressPayload {
+                    scanned_file_count: progress.scanned_file_count,
+                    processed_file_count: progress.processed_file_count,
+                    success_count: progress.success_count,
+                    failure_count: progress.failure_count,
+                    current_file: progress.current_file,
+                },
+            );
+        })
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_batch_image_watermark<F>(
-    input_dir: String,
-    output_dir: String,
-    watermark_text: String,
-    watermark_font_size: f32,
-    watermark_opacity: f32,
-    watermark_rotation: f32,
-    watermark_horizontal_spacing: u32,
-    watermark_vertical_spacing: u32,
+    payload: BatchImageWatermarkInput,
     on_progress: F,
 ) -> Result<BatchImageWatermarkResult, String>
 where
-    F: FnMut(kx_pdf::BatchImageWatermarkProgress),
+    F: FnMut(BatchImageWatermarkProgress),
 {
-    let input_dir = require_value("输入目录", input_dir)?;
-    let output_dir = require_value("输出目录", output_dir)?;
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let output_dir = require_value("输出目录", payload.output_dir)?;
     ensure_distinct_directories(&input_dir, &output_dir)?;
-    let watermark_text = require_value("水印文字", watermark_text)?;
-    let watermark_font_size = require_positive_number("水印字号", watermark_font_size)?;
-    let watermark_opacity = require_percentage("水印透明度", watermark_opacity)?;
-    let watermark_rotation = require_finite_number("水印角度", watermark_rotation)?;
-    let watermark_horizontal_spacing = require_spacing("横向间距", watermark_horizontal_spacing)?;
-    let watermark_vertical_spacing = require_spacing("纵向间距", watermark_vertical_spacing)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let watermark_font_size = require_positive_number("水印字号", payload.watermark_font_size)?;
+    let watermark_opacity = require_percentage("水印透明度", payload.watermark_opacity)?;
+    let watermark_rotation = require_finite_number("水印角度", payload.watermark_rotation)?;
+    let watermark_horizontal_spacing =
+        require_spacing("横向间距", payload.watermark_horizontal_spacing)?;
+    let watermark_vertical_spacing =
+        require_spacing("纵向间距", payload.watermark_vertical_spacing)?;
+    let options = BatchImageWatermarkOptions {
+        watermark_text: &watermark_text,
+        font_size: watermark_font_size,
+        opacity: watermark_opacity / 100.0,
+        rotation_degrees: watermark_rotation,
+        horizontal_spacing: watermark_horizontal_spacing,
+        vertical_spacing: watermark_vertical_spacing,
+    };
 
-    let result = Pdfs::add_text_watermark_to_images_with_progress(
+    let result = Imgs::add_text_watermark_to_images_with_progress(
         Path::new(&input_dir),
         Path::new(&output_dir),
-        &watermark_text,
-        watermark_font_size,
-        watermark_opacity / 100.0,
-        watermark_rotation,
-        watermark_horizontal_spacing,
-        watermark_vertical_spacing,
+        &options,
         on_progress,
     )
     .map_err(|err| err.to_string())?;
@@ -261,6 +235,7 @@ mod tests {
     use super::{
         add_text_watermark, extract_embedded_images, run_batch_image_watermark, split_pdf_to_images,
     };
+    use crate::models::{BatchImageWatermarkInput, PdfTextWatermarkInput};
 
     #[test]
     fn split_command_rejects_empty_input_path() {
@@ -272,16 +247,26 @@ mod tests {
 
     #[test]
     fn watermark_command_rejects_empty_text() {
-        let err = add_text_watermark("a.pdf".into(), "/tmp".into(), "".into(), 28.0)
-            .expect_err("empty watermark text should fail");
+        let err = add_text_watermark(PdfTextWatermarkInput {
+            input_path: "a.pdf".into(),
+            output_dir: "/tmp".into(),
+            watermark_text: "".into(),
+            watermark_font_size: 28.0,
+        })
+        .expect_err("empty watermark text should fail");
 
         assert!(err.contains("水印文字"));
     }
 
     #[test]
     fn watermark_command_rejects_non_positive_font_size() {
-        let err = add_text_watermark("a.pdf".into(), "/tmp".into(), "wm".into(), 0.0)
-            .expect_err("non-positive font size should fail");
+        let err = add_text_watermark(PdfTextWatermarkInput {
+            input_path: "a.pdf".into(),
+            output_dir: "/tmp".into(),
+            watermark_text: "wm".into(),
+            watermark_font_size: 0.0,
+        })
+        .expect_err("non-positive font size should fail");
 
         assert!(err.contains("水印字号"));
     }
@@ -297,14 +282,16 @@ mod tests {
     #[test]
     fn batch_image_watermark_command_rejects_same_input_and_output_dir() {
         let err = run_batch_image_watermark(
-            "/tmp/images".into(),
-            "/tmp/images/".into(),
-            "wm".into(),
-            28.0,
-            18.0,
-            -35.0,
-            180,
-            120,
+            BatchImageWatermarkInput {
+                input_dir: "/tmp/images".into(),
+                output_dir: "/tmp/images/".into(),
+                watermark_text: "wm".into(),
+                watermark_font_size: 28.0,
+                watermark_opacity: 18.0,
+                watermark_rotation: -35.0,
+                watermark_horizontal_spacing: 180,
+                watermark_vertical_spacing: 120,
+            },
             |_| {},
         )
         .expect_err("same directories should fail");
@@ -315,14 +302,16 @@ mod tests {
     #[test]
     fn batch_image_watermark_command_rejects_invalid_opacity() {
         let err = run_batch_image_watermark(
-            "/tmp/in".into(),
-            "/tmp/out".into(),
-            "wm".into(),
-            28.0,
-            0.0,
-            -35.0,
-            180,
-            120,
+            BatchImageWatermarkInput {
+                input_dir: "/tmp/in".into(),
+                output_dir: "/tmp/out".into(),
+                watermark_text: "wm".into(),
+                watermark_font_size: 28.0,
+                watermark_opacity: 0.0,
+                watermark_rotation: -35.0,
+                watermark_horizontal_spacing: 180,
+                watermark_vertical_spacing: 120,
+            },
             |_| {},
         )
         .expect_err("zero opacity should fail");
@@ -333,14 +322,16 @@ mod tests {
     #[test]
     fn batch_image_watermark_command_rejects_too_large_spacing() {
         let err = run_batch_image_watermark(
-            "/tmp/in".into(),
-            "/tmp/out".into(),
-            "wm".into(),
-            28.0,
-            18.0,
-            -35.0,
-            4_097,
-            120,
+            BatchImageWatermarkInput {
+                input_dir: "/tmp/in".into(),
+                output_dir: "/tmp/out".into(),
+                watermark_text: "wm".into(),
+                watermark_font_size: 28.0,
+                watermark_opacity: 18.0,
+                watermark_rotation: -35.0,
+                watermark_horizontal_spacing: 4_097,
+                watermark_vertical_spacing: 120,
+            },
             |_| {},
         )
         .expect_err("too large spacing should fail");

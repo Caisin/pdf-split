@@ -53,10 +53,12 @@ export function PdfWatermarkTool() {
 
     try {
       const result = await invoke<WatermarkPdfResult>("add_text_watermark", {
-        inputPath: watermarkPdfPath,
-        outputDir: watermarkOutputDir,
-        watermarkText,
-        watermarkFontSize,
+        payload: {
+          inputPath: watermarkPdfPath,
+          outputDir: watermarkOutputDir,
+          watermarkText,
+          watermarkFontSize,
+        },
       });
       setWatermarkTone("success");
       setWatermarkMessage(`完成：输出文件 ${result.outputPdfPath}`);

@@ -85,14 +85,16 @@ export function BatchImageWatermarkTool() {
       await yieldToBrowser();
 
       const result = await invoke<BatchImageWatermarkResult>("add_text_watermark_to_images", {
-        inputDir,
-        outputDir,
-        watermarkText,
-        watermarkFontSize: fontSize,
-        watermarkOpacity: opacity,
-        watermarkRotation: rotation,
-        watermarkHorizontalSpacing: horizontalSpacing,
-        watermarkVerticalSpacing: verticalSpacing,
+        payload: {
+          inputDir,
+          outputDir,
+          watermarkText,
+          watermarkFontSize: fontSize,
+          watermarkOpacity: opacity,
+          watermarkRotation: rotation,
+          watermarkHorizontalSpacing: horizontalSpacing,
+          watermarkVerticalSpacing: verticalSpacing,
+        },
       });
       setProgress(null);
       setTone("success");
