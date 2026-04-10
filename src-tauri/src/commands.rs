@@ -1,5 +1,5 @@
-use std::path::MAIN_SEPARATOR;
-use std::path::Path;
+use std::fs;
+use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 
 use kx_image::{BatchImageWatermarkOptions, BatchImageWatermarkProgress, Imgs};
 use kx_pdf::{PdfTextWatermarkOptions, Pdfs};
@@ -7,12 +7,12 @@ use tauri::{Emitter, EventTarget, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::models::{
-    BatchImageWatermarkInput, BatchImageWatermarkProgressPayload, BatchImageWatermarkResult,
-    ExtractImagesResult, PdfTextWatermarkInput, SplitPdfResult, WatermarkPdfResult,
+    BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchImageWatermarkProgressPayload,
+    BatchImageWatermarkResult, ExtractImagesResult, InputDirectoryImageListResult,
+    PdfTextWatermarkInput, PreviewImageBytesResult, SplitPdfResult, WatermarkPdfResult,
 };
 
 const BATCH_IMAGE_WATERMARK_PROGRESS_EVENT: &str = "batch-image-watermark-progress";
-
 #[tauri::command]
 pub fn select_pdf_file(window: WebviewWindow) -> Result<Option<String>, String> {
     let file = window
@@ -119,6 +119,28 @@ pub async fn add_text_watermark_to_images(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+pub fn list_input_directory_images(
+    input_dir: String,
+) -> Result<InputDirectoryImageListResult, String> {
+    Ok(InputDirectoryImageListResult {
+        files: list_previewable_images(&input_dir)?,
+    })
+}
+
+#[tauri::command]
+pub async fn generate_input_directory_image_preview(
+    payload: BatchImageWatermarkPreviewInput,
+) -> Result<PreviewImageBytesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(PreviewImageBytesResult {
+            bytes: generate_preview_image_bytes(payload)?,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn run_batch_image_watermark<F>(
     payload: BatchImageWatermarkInput,
     on_progress: F,
@@ -130,20 +152,25 @@ where
     let output_dir = require_value("输出目录", payload.output_dir)?;
     ensure_distinct_directories(&input_dir, &output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_font_size = require_positive_number("水印字号", payload.watermark_font_size)?;
+    let watermark_long_edge_font_ratio =
+        require_percentage("长边字号比例", payload.watermark_long_edge_font_ratio)?;
     let watermark_opacity = require_percentage("水印透明度", payload.watermark_opacity)?;
     let watermark_rotation = require_finite_number("水印角度", payload.watermark_rotation)?;
-    let watermark_horizontal_spacing =
-        require_spacing("横向间距", payload.watermark_horizontal_spacing)?;
-    let watermark_vertical_spacing =
-        require_spacing("纵向间距", payload.watermark_vertical_spacing)?;
+    let watermark_horizontal_spacing_ratio = require_zero_to_hundred_percentage(
+        "横向间距比例",
+        payload.watermark_horizontal_spacing_ratio,
+    )?;
+    let watermark_vertical_spacing_ratio = require_zero_to_hundred_percentage(
+        "纵向间距比例",
+        payload.watermark_vertical_spacing_ratio,
+    )?;
     let options = BatchImageWatermarkOptions {
         watermark_text: &watermark_text,
-        font_size: watermark_font_size,
+        long_edge_font_ratio: watermark_long_edge_font_ratio / 100.0,
         opacity: watermark_opacity / 100.0,
         rotation_degrees: watermark_rotation,
-        horizontal_spacing: watermark_horizontal_spacing,
-        vertical_spacing: watermark_vertical_spacing,
+        horizontal_spacing_ratio: watermark_horizontal_spacing_ratio / 100.0,
+        vertical_spacing_ratio: watermark_vertical_spacing_ratio / 100.0,
     };
 
     let result = Imgs::add_text_watermark_to_images_with_progress(
@@ -195,9 +222,9 @@ fn require_finite_number(label: &str, value: f32) -> Result<f32, String> {
     Ok(value)
 }
 
-fn require_spacing(label: &str, value: u32) -> Result<u32, String> {
-    if value > 4096 {
-        return Err(format!("{label}不能大于 4096"));
+fn require_zero_to_hundred_percentage(label: &str, value: f32) -> Result<f32, String> {
+    if !value.is_finite() || value < 0.0 || value > 100.0 {
+        return Err(format!("{label}必须在 0 到 100 之间"));
     }
 
     Ok(value)
@@ -230,12 +257,182 @@ fn ensure_trailing_separator(path: &str) -> String {
     format!("{trimmed}{MAIN_SEPARATOR}")
 }
 
+fn list_previewable_images(input_dir: &str) -> Result<Vec<String>, String> {
+    let input_dir = require_value("输入目录", input_dir.to_string())?;
+    let root = PathBuf::from(&input_dir);
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    let mut files = Vec::new();
+    collect_previewable_images(&root, &root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_previewable_images(
+    root: &Path,
+    current_dir: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(current_dir).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_previewable_images(root, &path, files)?;
+            continue;
+        }
+
+        if !is_preview_image_path(&path) {
+            continue;
+        }
+
+        let relative_path = path
+            .strip_prefix(root)
+            .map_err(|err| err.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        files.push(relative_path);
+    }
+
+    Ok(())
+}
+
+fn generate_preview_image_bytes(
+    payload: BatchImageWatermarkPreviewInput,
+) -> Result<Vec<u8>, String> {
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let root = PathBuf::from(&input_dir)
+        .canonicalize()
+        .map_err(|_| "输入目录不存在或不是有效目录".to_string())?;
+    let source_path = resolve_preview_image_path(root.as_path(), &payload.relative_path)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let watermark_long_edge_font_ratio =
+        require_percentage("长边字号比例", payload.watermark_long_edge_font_ratio)?;
+    let watermark_opacity = require_percentage("水印透明度", payload.watermark_opacity)?;
+    let watermark_rotation = require_finite_number("水印角度", payload.watermark_rotation)?;
+    let watermark_horizontal_spacing_ratio = require_zero_to_hundred_percentage(
+        "横向间距比例",
+        payload.watermark_horizontal_spacing_ratio,
+    )?;
+    let watermark_vertical_spacing_ratio = require_zero_to_hundred_percentage(
+        "纵向间距比例",
+        payload.watermark_vertical_spacing_ratio,
+    )?;
+    let relative_path = source_path
+        .strip_prefix(root.as_path())
+        .map_err(|err| err.to_string())?
+        .to_path_buf();
+
+    let temp_preview_dirs = TempPreviewDirs::new()?;
+    let preview_input_path = temp_preview_dirs.input_dir.join(&relative_path);
+    if let Some(parent) = preview_input_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::copy(&source_path, &preview_input_path).map_err(|err| err.to_string())?;
+
+    let options = BatchImageWatermarkOptions {
+        watermark_text: &watermark_text,
+        long_edge_font_ratio: watermark_long_edge_font_ratio / 100.0,
+        opacity: watermark_opacity / 100.0,
+        rotation_degrees: watermark_rotation,
+        horizontal_spacing_ratio: watermark_horizontal_spacing_ratio / 100.0,
+        vertical_spacing_ratio: watermark_vertical_spacing_ratio / 100.0,
+    };
+
+    Imgs::add_text_watermark_to_images(
+        temp_preview_dirs.input_dir.as_path(),
+        temp_preview_dirs.output_dir.as_path(),
+        &options,
+    )
+    .map_err(|err| err.to_string())?;
+
+    fs::read(temp_preview_dirs.output_dir.join(relative_path)).map_err(|err| err.to_string())
+}
+
+fn resolve_preview_image_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    let relative_path = require_value("预览图片", relative_path.to_string())?;
+    let candidate = Path::new(&relative_path);
+    if candidate.is_absolute() {
+        return Err("预览图片路径不合法".to_string());
+    }
+
+    let preview_path = root.join(candidate);
+    let preview_path = preview_path
+        .canonicalize()
+        .map_err(|_| "预览图片不存在".to_string())?;
+    if !preview_path.starts_with(&root)
+        || !preview_path.is_file()
+        || !is_preview_image_path(&preview_path)
+    {
+        return Err("预览图片路径不合法".to_string());
+    }
+
+    Ok(preview_path)
+}
+
+struct TempPreviewDirs {
+    input_dir: PathBuf,
+    output_dir: PathBuf,
+    root: PathBuf,
+}
+
+impl TempPreviewDirs {
+    fn new() -> Result<Self, String> {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| err.to_string())?
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("pdf-split-real-preview-{unique_suffix}"));
+        let input_dir = root.join("input");
+        let output_dir = root.join("output");
+        fs::create_dir_all(&input_dir).map_err(|err| err.to_string())?;
+        fs::create_dir_all(&output_dir).map_err(|err| err.to_string())?;
+
+        Ok(Self {
+            input_dir,
+            output_dir,
+            root,
+        })
+    }
+}
+
+impl Drop for TempPreviewDirs {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn is_preview_image_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff"
+            )
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        add_text_watermark, extract_embedded_images, run_batch_image_watermark, split_pdf_to_images,
+        add_text_watermark, extract_embedded_images, generate_preview_image_bytes,
+        list_previewable_images, run_batch_image_watermark, split_pdf_to_images,
     };
-    use crate::models::{BatchImageWatermarkInput, PdfTextWatermarkInput};
+    use crate::models::{
+        BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, PdfTextWatermarkInput,
+    };
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn split_command_rejects_empty_input_path() {
@@ -286,11 +483,11 @@ mod tests {
                 input_dir: "/tmp/images".into(),
                 output_dir: "/tmp/images/".into(),
                 watermark_text: "wm".into(),
-                watermark_font_size: 28.0,
+                watermark_long_edge_font_ratio: 2.8,
                 watermark_opacity: 18.0,
                 watermark_rotation: -35.0,
-                watermark_horizontal_spacing: 180,
-                watermark_vertical_spacing: 120,
+                watermark_horizontal_spacing_ratio: 18.0,
+                watermark_vertical_spacing_ratio: 12.0,
             },
             |_| {},
         )
@@ -306,11 +503,11 @@ mod tests {
                 input_dir: "/tmp/in".into(),
                 output_dir: "/tmp/out".into(),
                 watermark_text: "wm".into(),
-                watermark_font_size: 28.0,
+                watermark_long_edge_font_ratio: 2.8,
                 watermark_opacity: 0.0,
                 watermark_rotation: -35.0,
-                watermark_horizontal_spacing: 180,
-                watermark_vertical_spacing: 120,
+                watermark_horizontal_spacing_ratio: 18.0,
+                watermark_vertical_spacing_ratio: 12.0,
             },
             |_| {},
         )
@@ -326,16 +523,82 @@ mod tests {
                 input_dir: "/tmp/in".into(),
                 output_dir: "/tmp/out".into(),
                 watermark_text: "wm".into(),
-                watermark_font_size: 28.0,
+                watermark_long_edge_font_ratio: 2.8,
                 watermark_opacity: 18.0,
                 watermark_rotation: -35.0,
-                watermark_horizontal_spacing: 4_097,
-                watermark_vertical_spacing: 120,
+                watermark_horizontal_spacing_ratio: 101.0,
+                watermark_vertical_spacing_ratio: 12.0,
             },
             |_| {},
         )
         .expect_err("too large spacing should fail");
 
         assert!(err.contains("横向间距"));
+    }
+
+    #[test]
+    fn list_previewable_images_returns_sorted_relative_image_paths() {
+        let temp_dir = TestDir::new();
+        let nested_dir = temp_dir.path().join("nested");
+        fs::create_dir_all(&nested_dir).expect("nested dir should be created");
+        fs::write(temp_dir.path().join("cover.png"), [1, 2, 3]).expect("png should be written");
+        fs::write(nested_dir.join("demo.jpg"), [4, 5, 6]).expect("jpg should be written");
+        fs::write(temp_dir.path().join("ignore.txt"), b"noop").expect("txt should be written");
+
+        let files = list_previewable_images(temp_dir.path().to_string_lossy().as_ref())
+            .expect("image files should be listed");
+
+        assert_eq!(
+            files,
+            vec!["cover.png".to_string(), "nested/demo.jpg".to_string()]
+        );
+    }
+
+    #[test]
+    fn generate_preview_image_bytes_rejects_path_escape() {
+        let temp_dir = TestDir::new();
+        let nested_dir = temp_dir.path().join("nested");
+        fs::create_dir_all(&nested_dir).expect("nested dir should be created");
+        fs::write(nested_dir.join("demo.jpg"), [4, 5, 6]).expect("jpg should be written");
+
+        let err = generate_preview_image_bytes(BatchImageWatermarkPreviewInput {
+            input_dir: temp_dir.path().to_string_lossy().into_owned(),
+            relative_path: "../nested/demo.jpg".into(),
+            watermark_text: "wm".into(),
+            watermark_long_edge_font_ratio: 2.8,
+            watermark_opacity: 18.0,
+            watermark_rotation: -35.0,
+            watermark_horizontal_spacing_ratio: 18.0,
+            watermark_vertical_spacing_ratio: 12.0,
+        })
+        .expect_err("path escape should fail");
+
+        assert!(err.contains("预览图片路径不合法") || err.contains("预览图片不存在"));
+    }
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            let unique_suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be valid")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("pdf-split-preview-test-{unique_suffix}"));
+            fs::create_dir_all(&path).expect("temp dir should be created");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 }

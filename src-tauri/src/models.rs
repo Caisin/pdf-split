@@ -38,6 +38,18 @@ pub struct BatchImageWatermarkResult {
     pub output_dir: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputDirectoryImageListResult {
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewImageBytesResult {
+    pub bytes: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchImageWatermarkProgressPayload {
@@ -54,9 +66,22 @@ pub struct BatchImageWatermarkInput {
     pub input_dir: String,
     pub output_dir: String,
     pub watermark_text: String,
-    pub watermark_font_size: f32,
+    pub watermark_long_edge_font_ratio: f32,
     pub watermark_opacity: f32,
     pub watermark_rotation: f32,
-    pub watermark_horizontal_spacing: u32,
-    pub watermark_vertical_spacing: u32,
+    pub watermark_horizontal_spacing_ratio: f32,
+    pub watermark_vertical_spacing_ratio: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchImageWatermarkPreviewInput {
+    pub input_dir: String,
+    pub relative_path: String,
+    pub watermark_text: String,
+    pub watermark_long_edge_font_ratio: f32,
+    pub watermark_opacity: f32,
+    pub watermark_rotation: f32,
+    pub watermark_horizontal_spacing_ratio: f32,
+    pub watermark_vertical_spacing_ratio: f32,
 }

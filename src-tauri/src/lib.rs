@@ -12,7 +12,9 @@ pub fn run() {
             commands::split_pdf_to_images,
             commands::add_text_watermark,
             commands::extract_embedded_images,
-            commands::add_text_watermark_to_images
+            commands::add_text_watermark_to_images,
+            commands::list_input_directory_images,
+            commands::generate_input_directory_image_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

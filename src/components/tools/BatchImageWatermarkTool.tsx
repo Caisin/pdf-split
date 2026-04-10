@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -7,20 +7,30 @@ import { pathsLookSame, pickOutputDir } from "../common/dialog";
 import type {
   BatchImageWatermarkProgress,
   BatchImageWatermarkResult,
+  InputDirectoryImageListResult,
   MessageTone,
+  PreviewImageBytesResult,
 } from "../tool-types";
 
 const DEFAULT_WATERMARK_TEXT = "仅限xxx使用,它用或复印无效";
+const PREVIEW_DEBOUNCE_MS = 400;
 
 export function BatchImageWatermarkTool() {
   const [inputDir, setInputDir] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
-  const [fontSize, setFontSize] = useState(28);
+  const [longEdgeFontRatio, setLongEdgeFontRatio] = useState(2.8);
   const [opacity, setOpacity] = useState(18);
   const [rotation, setRotation] = useState(-35);
-  const [horizontalSpacing, setHorizontalSpacing] = useState(180);
-  const [verticalSpacing, setVerticalSpacing] = useState(120);
+  const [horizontalSpacingRatio, setHorizontalSpacingRatio] = useState(18);
+  const [verticalSpacingRatio, setVerticalSpacingRatio] = useState(12);
+  const [previewImageFiles, setPreviewImageFiles] = useState<string[]>([]);
+  const [selectedPreviewImage, setSelectedPreviewImage] = useState("");
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageMessage, setPreviewImageMessage] = useState("选择输入目录后，将自动生成真实预览。");
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const previewObjectUrlRef = useRef("");
+  const previewRequestIdRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<BatchImageWatermarkProgress | null>(null);
   const [message, setMessage] = useState("");
@@ -32,21 +42,116 @@ export function BatchImageWatermarkTool() {
     outputDir !== "" &&
     !directoryConflict &&
     watermarkText.trim() !== "" &&
-    Number.isFinite(fontSize) &&
-    fontSize > 0 &&
+    Number.isFinite(longEdgeFontRatio) &&
+    longEdgeFontRatio > 0 &&
+    longEdgeFontRatio <= 100 &&
     Number.isFinite(opacity) &&
     opacity > 0 &&
     opacity <= 100 &&
     Number.isFinite(rotation) &&
-    Number.isFinite(horizontalSpacing) &&
-    horizontalSpacing >= 0 &&
-    Number.isFinite(verticalSpacing) &&
-    verticalSpacing >= 0;
+    Number.isFinite(horizontalSpacingRatio) &&
+    horizontalSpacingRatio >= 0 &&
+    horizontalSpacingRatio <= 100 &&
+    Number.isFinite(verticalSpacingRatio) &&
+    verticalSpacingRatio >= 0 &&
+    verticalSpacingRatio <= 100;
+
+  useEffect(() => {
+    if (inputDir === "" || selectedPreviewImage === "") {
+      setPreviewBusy(false);
+      return;
+    }
+
+    let active = true;
+    const requestId = ++previewRequestIdRef.current;
+    const previewTimer = window.setTimeout(() => {
+      void loadPreviewImage();
+    }, PREVIEW_DEBOUNCE_MS);
+
+    setPreviewBusy(true);
+    if (previewImageUrl === "") {
+      setPreviewImageMessage("正在生成真实预览...");
+    }
+
+    async function loadPreviewImage() {
+      try {
+        const result = await invoke<PreviewImageBytesResult>("generate_input_directory_image_preview", {
+          payload: {
+            inputDir,
+            relativePath: selectedPreviewImage,
+            watermarkText,
+            watermarkLongEdgeFontRatio: longEdgeFontRatio,
+            watermarkOpacity: opacity,
+            watermarkRotation: rotation,
+            watermarkHorizontalSpacingRatio: horizontalSpacingRatio,
+            watermarkVerticalSpacingRatio: verticalSpacingRatio,
+          },
+        });
+        if (!active || previewRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        const nextObjectUrl = URL.createObjectURL(
+          new Blob([new Uint8Array(result.bytes)], { type: getImageMimeType(selectedPreviewImage) }),
+        );
+        if (previewObjectUrlRef.current !== "") {
+          URL.revokeObjectURL(previewObjectUrlRef.current);
+        }
+        previewObjectUrlRef.current = nextObjectUrl;
+        setPreviewImageUrl(nextObjectUrl);
+        setPreviewBusy(false);
+        setPreviewImageMessage(`真实预览：${selectedPreviewImage}`);
+      } catch (_error) {
+        if (!active || previewRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setPreviewBusy(false);
+        setPreviewImageMessage("真实预览生成失败，请检查参数或更换图片后重试。");
+      }
+    }
+
+    return () => {
+      active = false;
+      window.clearTimeout(previewTimer);
+    };
+  }, [
+    inputDir,
+    longEdgeFontRatio,
+    opacity,
+    rotation,
+    selectedPreviewImage,
+    horizontalSpacingRatio,
+    verticalSpacingRatio,
+    watermarkText,
+  ]);
 
   async function handlePickInputDir() {
     const selected = await pickOutputDir();
     if (selected) {
       setInputDir(selected);
+      if (previewObjectUrlRef.current !== "") {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = "";
+      }
+      setPreviewImageUrl("");
+      setSelectedPreviewImage("");
+      try {
+        const result = await invoke<InputDirectoryImageListResult>("list_input_directory_images", {
+          inputDir: selected,
+        });
+        setPreviewImageFiles(result.files);
+        setSelectedPreviewImage(result.files[0] ?? "");
+        setPreviewBusy(result.files.length > 0);
+        setPreviewImageMessage(
+          result.files.length > 0
+            ? "正在生成真实预览..."
+            : "目录内未找到可预览图片，无法生成真实预览。",
+        );
+      } catch (_error) {
+        setPreviewImageFiles([]);
+        setPreviewImageMessage("预览图片列表加载失败，无法生成真实预览。");
+      }
       setMessage("");
       setTone("idle");
     }
@@ -60,6 +165,14 @@ export function BatchImageWatermarkTool() {
       setTone("idle");
     }
   }
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current !== "") {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,11 +202,11 @@ export function BatchImageWatermarkTool() {
           inputDir,
           outputDir,
           watermarkText,
-          watermarkFontSize: fontSize,
+          watermarkLongEdgeFontRatio: longEdgeFontRatio,
           watermarkOpacity: opacity,
           watermarkRotation: rotation,
-          watermarkHorizontalSpacing: horizontalSpacing,
-          watermarkVerticalSpacing: verticalSpacing,
+          watermarkHorizontalSpacingRatio: horizontalSpacingRatio,
+          watermarkVerticalSpacingRatio: verticalSpacingRatio,
         },
       });
       setProgress(null);
@@ -152,18 +265,18 @@ export function BatchImageWatermarkTool() {
 
       <div className="field-grid field-grid-compact">
         <label className="field">
-          <span>水印字号</span>
+          <span>长边字号比例 (%)</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印字号"
+              aria-label="长边字号比例"
               type="number"
-              min={12}
-              max={72}
-              step={1}
-              value={fontSize}
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={longEdgeFontRatio}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setFontSize(Number.isFinite(nextValue) ? nextValue : 0);
+                setLongEdgeFontRatio(Number.isFinite(nextValue) ? nextValue : 0);
               }}
             />
           </div>
@@ -206,41 +319,85 @@ export function BatchImageWatermarkTool() {
         </label>
 
         <label className="field">
-          <span>横向间距</span>
+          <span>横向间距比例 (%)</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印横向间距"
+              aria-label="图片水印横向间距比例"
               type="number"
               min={0}
-              max={4096}
-              step={10}
-              value={horizontalSpacing}
+              max={100}
+              step={0.1}
+              value={horizontalSpacingRatio}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setHorizontalSpacing(Number.isFinite(nextValue) ? nextValue : 0);
+                setHorizontalSpacingRatio(Number.isFinite(nextValue) ? nextValue : 0);
               }}
             />
           </div>
         </label>
 
         <label className="field">
-          <span>纵向间距</span>
+          <span>纵向间距比例 (%)</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印纵向间距"
+              aria-label="图片水印纵向间距比例"
               type="number"
               min={0}
-              max={4096}
-              step={10}
-              value={verticalSpacing}
+              max={100}
+              step={0.1}
+              value={verticalSpacingRatio}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setVerticalSpacing(Number.isFinite(nextValue) ? nextValue : 0);
+                setVerticalSpacingRatio(Number.isFinite(nextValue) ? nextValue : 0);
               }}
             />
           </div>
         </label>
       </div>
+
+      <p className="status-line idle">字号将按图片长边自动计算，并限制在短边的 1% - 50% 之间</p>
+
+      <section className="preview-panel">
+        <div className="preview-panel-head">
+          <span>参数预览</span>
+          <p>{previewImageMessage}</p>
+        </div>
+        {previewImageFiles.length > 0 && (
+          <label className="field">
+            <span>预览图片</span>
+            <div className="input-shell">
+              <select
+                aria-label="预览图片"
+                value={selectedPreviewImage}
+                onChange={(event) => setSelectedPreviewImage(event.currentTarget.value)}
+              >
+                {previewImageFiles.map((file) => (
+                  <option key={file} value={file}>
+                    {file}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+        )}
+        <div
+          aria-label="图片水印参数预览"
+          className={`watermark-preview ${previewImageUrl !== "" ? "has-image" : ""}`}
+          role="img"
+        >
+          {previewBusy && <div className="watermark-preview-updating">更新中</div>}
+          {previewImageUrl !== "" && (
+            <img
+              alt={`真实预览图：${selectedPreviewImage}`}
+              className="watermark-preview-image"
+              src={previewImageUrl}
+            />
+          )}
+          {previewImageUrl === "" && !previewBusy && (
+            <div className="watermark-preview-placeholder">{previewImageMessage}</div>
+          )}
+        </div>
+      </section>
 
       <p className={`status-line ${directoryConflict ? "error" : "idle"}`}>
         {directoryConflict
@@ -284,4 +441,25 @@ function formatBatchImageProgress(progress: BatchImageWatermarkProgress) {
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
   return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}）${currentFile}`;
+}
+
+function getImageMimeType(filePath: string) {
+  const lowerFilePath = filePath.toLowerCase();
+  if (lowerFilePath.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lowerFilePath.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (lowerFilePath.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (lowerFilePath.endsWith(".bmp")) {
+    return "image/bmp";
+  }
+  if (lowerFilePath.endsWith(".tif") || lowerFilePath.endsWith(".tiff")) {
+    return "image/tiff";
+  }
+
+  return "image/jpeg";
 }

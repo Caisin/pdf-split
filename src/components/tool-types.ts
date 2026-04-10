@@ -27,4 +27,12 @@ export type BatchImageWatermarkProgress = {
   currentFile: string | null;
 };
 
+export type InputDirectoryImageListResult = {
+  files: string[];
+};
+
+export type PreviewImageBytesResult = {
+  bytes: number[];
+};
+
 export type MessageTone = "idle" | "success" | "error";
