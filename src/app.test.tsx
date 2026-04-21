@@ -154,8 +154,8 @@ describe("App", () => {
           outputDir: "/tmp/output-dir",
           watermarkText: "仅限xxx使用,它用或复印无效",
           watermarkLongEdgeFontRatio: 0.028,
-          watermarkOpacity: 50 / 255,
-          watermarkRotationDegrees: (-1 * 180) / Math.PI,
+          watermarkOpacity: 0.3,
+          watermarkRotationDegrees: -35,
           watermarkStripeGapChars: 2,
           watermarkRowGapLines: 3,
         },
@@ -221,8 +221,8 @@ describe("App", () => {
           outputDir: "/tmp/output-pdfs",
           watermarkText: "仅限xxx使用,它用或复印无效",
           watermarkLongEdgeFontRatio: 0.028,
-          watermarkOpacity: 50 / 255,
-          watermarkRotationDegrees: (-1 * 180) / Math.PI,
+          watermarkOpacity: 0.3,
+          watermarkRotationDegrees: -35,
           watermarkStripeGapChars: 2,
           watermarkRowGapLines: 3,
         },
@@ -963,14 +963,62 @@ describe("App", () => {
     expect(form).toHaveClass("tool-card-dense");
     expect(form?.querySelector(".picker-grid")).not.toBeNull();
     expect(form?.querySelector(".field-grid-compact")).not.toBeNull();
+    expect(screen.getByRole("img", { name: "PDF 水印参数预览" })).toBeInTheDocument();
     expect(
       screen.getByDisplayValue("仅限xxx使用,它用或复印无效"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("PDF 长边字号比例")).toHaveValue(0.028);
-    expect(screen.getByLabelText("PDF 水印透明度")).toHaveValue(50 / 255);
-    expect(screen.getByLabelText("PDF 水印旋转角度")).toHaveValue((-1 * 180) / Math.PI);
+    expect(screen.getByLabelText("PDF 水印透明度")).toHaveValue(0.3);
+    expect(screen.getByLabelText("PDF 水印倾斜角度")).toHaveValue(-35);
     expect(screen.getByLabelText("PDF 水印条间距")).toHaveValue(2);
     expect(screen.getByLabelText("PDF 水印行间距")).toHaveValue(3);
     expect(screen.getByRole("button", { name: "开始批量生成水印 PDF" })).toBeDisabled();
+  });
+
+  test("loads first pdf page preview from the selected input directory", async () => {
+    vi.useFakeTimers();
+    openMock.mockResolvedValue("/tmp/input-pdfs");
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "list_input_directory_pdfs") {
+        expect(args).toEqual({ inputDir: "/tmp/input-pdfs" });
+        return {
+          files: ["cover.pdf", "nested/demo.pdf"],
+        };
+      }
+
+      if (command === "generate_input_directory_pdf_preview") {
+        expect(args).toEqual({
+          payload: {
+            inputDir: "/tmp/input-pdfs",
+            relativePath: "cover.pdf",
+            watermarkText: "仅限xxx使用,它用或复印无效",
+            watermarkLongEdgeFontRatio: 0.028,
+            watermarkOpacity: 0.3,
+            watermarkRotationDegrees: -35,
+            watermarkStripeGapChars: 2,
+            watermarkRowGapLines: 3,
+          },
+        });
+        return { bytes: [137, 80, 78, 71] };
+      }
+
+      return undefined;
+    });
+
+    render(<App />);
+    activateTab("文字水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择输入目录" }));
+    await act(async () => {});
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(screen.getByRole("img", { name: "真实预览图：cover.pdf" })).toHaveAttribute(
+      "src",
+      "blob:preview-1",
+    );
+    expect(screen.getByText("真实预览：cover.pdf（倾斜角度 -35.0°）")).toBeInTheDocument();
   });
 });
