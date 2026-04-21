@@ -58,30 +58,32 @@ export function ExtractImagesTool() {
   }
 
   return (
-    <form className="tool-card" onSubmit={handleExtractSubmit}>
+    <form className="tool-card tool-card-dense" onSubmit={handleExtractSubmit}>
       <div className="card-head">
         <p className="card-kicker">Tool 02</p>
         <h2>提取 PDF 内嵌图片</h2>
         <p>提取 PDF 中真正嵌入的图片资源，适合已有扫描图、插图和照片类内容。</p>
       </div>
 
-      <PickerField
-        label="PDF 文件"
-        placeholder="请选择一个 PDF 文件"
-        value={extractPdfPath}
-        buttonLabel="选择 PDF"
-        kind="file"
-        onPick={handlePickExtractPdf}
-      />
+      <div className="picker-grid">
+        <PickerField
+          label="PDF 文件"
+          placeholder="请选择一个 PDF 文件"
+          value={extractPdfPath}
+          buttonLabel="选择 PDF"
+          kind="file"
+          onPick={handlePickExtractPdf}
+        />
 
-      <PickerField
-        label="输出目录"
-        placeholder="请选择输出目录"
-        value={extractOutputDir}
-        buttonLabel="选择目录"
-        kind="folder"
-        onPick={handlePickExtractOutputDir}
-      />
+        <PickerField
+          label="输出目录"
+          placeholder="请选择输出目录"
+          value={extractOutputDir}
+          buttonLabel="选择目录"
+          kind="folder"
+          onPick={handlePickExtractOutputDir}
+        />
+      </div>
 
       <button className="submit-button" type="submit" disabled={!canExtract || extractBusy}>
         {extractBusy ? "处理中..." : "开始提取内嵌图片"}

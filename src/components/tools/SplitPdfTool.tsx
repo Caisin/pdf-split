@@ -62,40 +62,44 @@ export function SplitPdfTool() {
   }
 
   return (
-    <form className="tool-card" onSubmit={handleSplitSubmit}>
+    <form className="tool-card tool-card-dense" onSubmit={handleSplitSubmit}>
       <div className="card-head">
         <p className="card-kicker">Tool 01</p>
         <h2>PDF 转图片</h2>
         <p>选择 PDF、选择输出目录，再按页导出为 PNG 或 JPG。</p>
       </div>
 
-      <PickerField
-        label="PDF 文件"
-        placeholder="请选择一个 PDF 文件"
-        value={imagePdfPath}
-        buttonLabel="选择 PDF"
-        kind="file"
-        onPick={handlePickImagePdf}
-      />
+      <div className="picker-grid">
+        <PickerField
+          label="PDF 文件"
+          placeholder="请选择一个 PDF 文件"
+          value={imagePdfPath}
+          buttonLabel="选择 PDF"
+          kind="file"
+          onPick={handlePickImagePdf}
+        />
 
-      <PickerField
-        label="输出目录"
-        placeholder="请选择输出目录"
-        value={imageOutputDir}
-        buttonLabel="选择目录"
-        kind="folder"
-        onPick={handlePickImageOutputDir}
-      />
+        <PickerField
+          label="输出目录"
+          placeholder="请选择输出目录"
+          value={imageOutputDir}
+          buttonLabel="选择目录"
+          kind="folder"
+          onPick={handlePickImageOutputDir}
+        />
+      </div>
 
-      <label className="field">
-        <span>图片格式</span>
-        <div className="input-shell">
-          <select value={imageFormat} onChange={(event) => setImageFormat(event.currentTarget.value)}>
-            <option value="png">PNG</option>
-            <option value="jpg">JPG</option>
-          </select>
-        </div>
-      </label>
+      <div className="field-grid">
+        <label className="field">
+          <span>图片格式</span>
+          <div className="input-shell">
+            <select value={imageFormat} onChange={(event) => setImageFormat(event.currentTarget.value)}>
+              <option value="png">PNG</option>
+              <option value="jpg">JPG</option>
+            </select>
+          </div>
+        </label>
+      </div>
 
       <button className="submit-button" type="submit" disabled={!canSplit || imageBusy}>
         {imageBusy ? "处理中..." : "开始导出图片"}

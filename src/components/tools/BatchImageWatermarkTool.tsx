@@ -19,11 +19,11 @@ export function BatchImageWatermarkTool() {
   const [inputDir, setInputDir] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
-  const [longEdgeFontRatio, setLongEdgeFontRatio] = useState(2.8);
-  const [opacity, setOpacity] = useState(18);
-  const [rotation, setRotation] = useState(-35);
-  const [horizontalSpacingRatio, setHorizontalSpacingRatio] = useState(18);
-  const [verticalSpacingRatio, setVerticalSpacingRatio] = useState(12);
+  const [lineCount, setLineCount] = useState(3);
+  const [fullScreen, setFullScreen] = useState(true);
+  const [opacity, setOpacity] = useState(0.2);
+  const [stripeGapChars, setStripeGapChars] = useState(2);
+  const [rowGapLines, setRowGapLines] = useState(3);
   const [previewImageFiles, setPreviewImageFiles] = useState<string[]>([]);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState("");
@@ -42,19 +42,15 @@ export function BatchImageWatermarkTool() {
     outputDir !== "" &&
     !directoryConflict &&
     watermarkText.trim() !== "" &&
-    Number.isFinite(longEdgeFontRatio) &&
-    longEdgeFontRatio > 0 &&
-    longEdgeFontRatio <= 100 &&
+    Number.isInteger(lineCount) &&
+    lineCount > 0 &&
     Number.isFinite(opacity) &&
-    opacity > 0 &&
-    opacity <= 100 &&
-    Number.isFinite(rotation) &&
-    Number.isFinite(horizontalSpacingRatio) &&
-    horizontalSpacingRatio >= 0 &&
-    horizontalSpacingRatio <= 100 &&
-    Number.isFinite(verticalSpacingRatio) &&
-    verticalSpacingRatio >= 0 &&
-    verticalSpacingRatio <= 100;
+    opacity >= 0 &&
+    opacity <= 1 &&
+    Number.isFinite(stripeGapChars) &&
+    stripeGapChars >= 0 &&
+    Number.isFinite(rowGapLines) &&
+    rowGapLines >= 0;
 
   useEffect(() => {
     if (inputDir === "" || selectedPreviewImage === "") {
@@ -80,11 +76,11 @@ export function BatchImageWatermarkTool() {
             inputDir,
             relativePath: selectedPreviewImage,
             watermarkText,
-            watermarkLongEdgeFontRatio: longEdgeFontRatio,
+            watermarkLineCount: lineCount,
+            watermarkFullScreen: fullScreen,
             watermarkOpacity: opacity,
-            watermarkRotation: rotation,
-            watermarkHorizontalSpacingRatio: horizontalSpacingRatio,
-            watermarkVerticalSpacingRatio: verticalSpacingRatio,
+            watermarkStripeGapChars: stripeGapChars,
+            watermarkRowGapLines: rowGapLines,
           },
         });
         if (!active || previewRequestIdRef.current !== requestId) {
@@ -116,13 +112,13 @@ export function BatchImageWatermarkTool() {
       window.clearTimeout(previewTimer);
     };
   }, [
+    fullScreen,
     inputDir,
-    longEdgeFontRatio,
+    lineCount,
     opacity,
-    rotation,
+    rowGapLines,
     selectedPreviewImage,
-    horizontalSpacingRatio,
-    verticalSpacingRatio,
+    stripeGapChars,
     watermarkText,
   ]);
 
@@ -202,11 +198,11 @@ export function BatchImageWatermarkTool() {
           inputDir,
           outputDir,
           watermarkText,
-          watermarkLongEdgeFontRatio: longEdgeFontRatio,
+          watermarkLineCount: lineCount,
+          watermarkFullScreen: fullScreen,
           watermarkOpacity: opacity,
-          watermarkRotation: rotation,
-          watermarkHorizontalSpacingRatio: horizontalSpacingRatio,
-          watermarkVerticalSpacingRatio: verticalSpacingRatio,
+          watermarkStripeGapChars: stripeGapChars,
+          watermarkRowGapLines: rowGapLines,
         },
       });
       setProgress(null);
@@ -265,97 +261,88 @@ export function BatchImageWatermarkTool() {
 
       <div className="field-grid field-grid-compact">
         <label className="field">
-          <span>长边字号比例 (%)</span>
+          <span>水印行数</span>
           <div className="input-shell">
             <input
-              aria-label="长边字号比例"
+              aria-label="水印行数"
               type="number"
-              min={0.1}
-              max={100}
-              step={0.1}
-              value={longEdgeFontRatio}
+              min={1}
+              step={1}
+              value={lineCount}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setLongEdgeFontRatio(Number.isFinite(nextValue) ? nextValue : 0);
+                setLineCount(Number.isFinite(nextValue) ? Math.trunc(nextValue) : 0);
               }}
             />
           </div>
         </label>
 
         <label className="field">
-          <span>透明度 (%)</span>
+          <span>透明度 (0-1)</span>
           <div className="input-shell">
             <input
               aria-label="图片水印透明度"
               type="number"
-              min={1}
-              max={100}
-              step={1}
+              min={0}
+              max={1}
+              step={0.05}
               value={opacity}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setOpacity(Number.isFinite(nextValue) ? nextValue : 0);
+                setOpacity(Number.isFinite(nextValue) ? nextValue : -1);
               }}
             />
           </div>
         </label>
 
         <label className="field">
-          <span>旋转角度</span>
+          <span>条间距（字符倍数）</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印旋转角度"
-              type="number"
-              min={-89}
-              max={89}
-              step={1}
-              value={rotation}
-              onChange={(event) => {
-                const nextValue = event.currentTarget.valueAsNumber;
-                setRotation(Number.isFinite(nextValue) ? nextValue : 0);
-              }}
-            />
-          </div>
-        </label>
-
-        <label className="field">
-          <span>横向间距比例 (%)</span>
-          <div className="input-shell">
-            <input
-              aria-label="图片水印横向间距比例"
+              aria-label="图片水印条间距"
               type="number"
               min={0}
-              max={100}
               step={0.1}
-              value={horizontalSpacingRatio}
+              value={stripeGapChars}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setHorizontalSpacingRatio(Number.isFinite(nextValue) ? nextValue : 0);
+                setStripeGapChars(Number.isFinite(nextValue) ? nextValue : -1);
               }}
             />
           </div>
         </label>
 
         <label className="field">
-          <span>纵向间距比例 (%)</span>
+          <span>行间距（行高倍数）</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印纵向间距比例"
+              aria-label="图片水印行间距"
               type="number"
               min={0}
-              max={100}
               step={0.1}
-              value={verticalSpacingRatio}
+              value={rowGapLines}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setVerticalSpacingRatio(Number.isFinite(nextValue) ? nextValue : 0);
+                setRowGapLines(Number.isFinite(nextValue) ? nextValue : -1);
               }}
             />
           </div>
         </label>
       </div>
 
-      <p className="status-line idle">字号将按图片长边自动计算，并限制在短边的 1% - 50% 之间</p>
+      <label className="field field-checkbox">
+        <span>铺满画面</span>
+        <div className="input-shell">
+          <input
+            aria-label="铺满画面"
+            checked={fullScreen}
+            type="checkbox"
+            onChange={(event) => setFullScreen(event.currentTarget.checked)}
+          />
+        </div>
+      </label>
+
+      <p className="status-line idle">直接使用 SlantedWatermarkOptions 参数生成预览与批处理</p>
 
       <section className="preview-panel">
         <div className="preview-panel-head">

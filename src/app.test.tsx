@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -101,6 +101,16 @@ describe("App", () => {
     ).toBeDisabled();
   });
 
+  test("renders split tool with dense compact picker layout", () => {
+    render(<App />);
+
+    const heading = screen.getByText("PDF 转图片");
+    const form = heading.closest("form");
+    expect(form).toHaveClass("tool-card-dense");
+    expect(form?.querySelector(".picker-grid")).not.toBeNull();
+    expect(form?.querySelector(".field-grid")).not.toBeNull();
+  });
+
   test("disables watermark submit when watermark font size is invalid", () => {
     render(<App />);
     activateTab("文字水印");
@@ -109,34 +119,134 @@ describe("App", () => {
     });
 
     expect(
-      screen.getByRole("button", { name: "开始生成水印 PDF" }),
+      screen.getByRole("button", { name: "开始批量生成水印 PDF" }),
     ).toBeDisabled();
   });
 
 
-  test("submits pdf watermark payload through tauri invoke", async () => {
+  test("submits batch pdf watermark payload through tauri invoke", async () => {
     openMock
-      .mockResolvedValueOnce("/tmp/demo.pdf")
+      .mockResolvedValueOnce("/tmp/input-pdfs")
       .mockResolvedValueOnce("/tmp/output-dir");
-    invokeMock.mockResolvedValue({ outputPdfPath: "/tmp/output-dir/demo-watermarked.pdf" });
+    invokeMock.mockResolvedValue({
+      scannedFileCount: 3,
+      successCount: 2,
+      failureCount: 1,
+      outputDir: "/tmp/output-dir",
+    });
 
     render(<App />);
     activateTab("文字水印");
 
-    fireEvent.click(screen.getByRole("button", { name: "选择 PDF" }));
-    fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
-    await screen.findByDisplayValue("/tmp/demo.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "选择输入目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择输出目录" }));
+    await screen.findByDisplayValue("/tmp/input-pdfs");
     await screen.findByDisplayValue("/tmp/output-dir");
 
-    fireEvent.click(screen.getByRole("button", { name: "开始生成水印 PDF" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始批量生成水印 PDF" }));
 
-    expect(invokeMock).toHaveBeenCalledWith("add_text_watermark", {
-      payload: {
-        inputPath: "/tmp/demo.pdf",
-        outputDir: "/tmp/output-dir",
-        watermarkText: "仅限xxx使用,它用或复印无效",
-        watermarkFontSize: 28,
-      },
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("add_text_watermark_to_pdfs", {
+        payload: {
+          inputDir: "/tmp/input-pdfs",
+          outputDir: "/tmp/output-dir",
+          watermarkText: "仅限xxx使用,它用或复印无效",
+          watermarkFontSize: 28,
+        },
+      });
+    });
+  });
+
+  test("disables batch pdf watermark submit when input and output directories match", async () => {
+    openMock.mockResolvedValue("/tmp/pdfs");
+
+    render(<App />);
+    activateTab("文字水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择输入目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择输出目录" }));
+
+    await screen.findByText("输入目录与输出目录不能相同");
+    expect(screen.getByRole("button", { name: "开始批量生成水印 PDF" })).toBeDisabled();
+  });
+
+  test("shows batch pdf watermark progress and keeps submit disabled while running", async () => {
+    openMock
+      .mockResolvedValueOnce("/tmp/input-pdfs")
+      .mockResolvedValueOnce("/tmp/output-pdfs");
+
+    let resolveInvoke:
+      | ((value: {
+          scannedFileCount: number;
+          successCount: number;
+          failureCount: number;
+          outputDir: string;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation(async (command) => {
+      if (command !== "add_text_watermark_to_pdfs") {
+        return undefined;
+      }
+
+      return await new Promise<{
+        scannedFileCount: number;
+        successCount: number;
+        failureCount: number;
+        outputDir: string;
+      }>((resolve) => {
+        resolveInvoke = resolve;
+      });
+    });
+
+    render(<App />);
+    activateTab("文字水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择输入目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择输出目录" }));
+    await screen.findByDisplayValue("/tmp/input-pdfs");
+    await screen.findByDisplayValue("/tmp/output-pdfs");
+    fireEvent.click(screen.getByRole("button", { name: "开始批量生成水印 PDF" }));
+
+    expect(await screen.findByRole("button", { name: "处理中..." })).toBeDisabled();
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("add_text_watermark_to_pdfs", {
+        payload: {
+          inputDir: "/tmp/input-pdfs",
+          outputDir: "/tmp/output-pdfs",
+          watermarkText: "仅限xxx使用,它用或复印无效",
+          watermarkFontSize: 28,
+        },
+      });
+    });
+    expect(listenMock).toHaveBeenCalledWith(
+      "batch-pdf-watermark-progress",
+      expect.any(Function),
+    );
+
+    await act(async () => {
+      getProgressHandler()?.({
+        payload: {
+          scannedFileCount: 5,
+          processedFileCount: 2,
+          successCount: 1,
+          failureCount: 1,
+          currentFile: "nested/demo.pdf",
+        },
+      });
+    });
+
+    expect(await screen.findByRole("progressbar", { name: "PDF 水印处理进度" })).toHaveValue(2);
+    expect(
+      screen.getAllByText("处理中：2 / 5（成功 1，失败 1）当前文件 nested/demo.pdf"),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      resolveInvoke?.({
+        scannedFileCount: 5,
+        successCount: 4,
+        failureCount: 1,
+        outputDir: "/tmp/output-pdfs",
+      });
     });
   });
 
@@ -149,12 +259,12 @@ describe("App", () => {
     expect(screen.getByText("批量图片文字水印")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "图片水印参数预览" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "预览图片" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("长边字号比例")).toHaveValue(2.8);
-    expect(screen.getByLabelText("图片水印横向间距比例")).toHaveValue(18);
-    expect(screen.getByLabelText("图片水印纵向间距比例")).toHaveValue(12);
-    expect(
-      screen.getByText("字号将按图片长边自动计算，并限制在短边的 1% - 50% 之间"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("水印行数")).toHaveValue(3);
+    expect(screen.getByLabelText("图片水印透明度")).toHaveValue(0.2);
+    expect(screen.getByLabelText("图片水印条间距")).toHaveValue(2);
+    expect(screen.getByLabelText("图片水印行间距")).toHaveValue(3);
+    expect(screen.getByLabelText("铺满画面")).toBeChecked();
+    expect(screen.getByText("直接使用 SlantedWatermarkOptions 参数生成预览与批处理")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "开始批量生成图片水印" }),
     ).toBeDisabled();
@@ -270,20 +380,18 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "水印文字" }), {
       target: { value: "测试预览文字" },
     });
-    fireEvent.change(screen.getByLabelText("长边字号比例"), {
-      target: { value: "3.5", valueAsNumber: 3.5 },
+    fireEvent.change(screen.getByLabelText("水印行数"), {
+      target: { value: "4", valueAsNumber: 4 },
     });
     fireEvent.change(screen.getByLabelText("图片水印透明度"), {
-      target: { value: "42", valueAsNumber: 42 },
+      target: { value: "0.35", valueAsNumber: 0.35 },
     });
-    fireEvent.change(screen.getByLabelText("图片水印旋转角度"), {
-      target: { value: "-20", valueAsNumber: -20 },
+    fireEvent.click(screen.getByLabelText("铺满画面"));
+    fireEvent.change(screen.getByLabelText("图片水印条间距"), {
+      target: { value: "1.5", valueAsNumber: 1.5 },
     });
-    fireEvent.change(screen.getByLabelText("图片水印横向间距比例"), {
-      target: { value: "22", valueAsNumber: 22 },
-    });
-    fireEvent.change(screen.getByLabelText("图片水印纵向间距比例"), {
-      target: { value: "14", valueAsNumber: 14 },
+    fireEvent.change(screen.getByLabelText("图片水印行间距"), {
+      target: { value: "2.5", valueAsNumber: 2.5 },
     });
 
     expect(
@@ -314,17 +422,17 @@ describe("App", () => {
           inputDir: "/tmp/input-images",
           relativePath: "cover.png",
           watermarkText: "测试预览文字",
-          watermarkLongEdgeFontRatio: 3.5,
-          watermarkOpacity: 42,
-          watermarkRotation: -20,
-          watermarkHorizontalSpacingRatio: 22,
-          watermarkVerticalSpacingRatio: 14,
+          watermarkLineCount: 4,
+          watermarkFullScreen: false,
+          watermarkOpacity: 0.35,
+          watermarkStripeGapChars: 1.5,
+          watermarkRowGapLines: 2.5,
         },
       },
     );
 
-    fireEvent.change(screen.getByLabelText("长边字号比例"), {
-      target: { value: "4.2", valueAsNumber: 4.2 },
+    fireEvent.change(screen.getByLabelText("水印行数"), {
+      target: { value: "5", valueAsNumber: 5 },
     });
 
     await act(async () => {
@@ -409,17 +517,19 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "处理中..." })).toBeDisabled();
     await act(async () => {});
-    expect(invokeMock).toHaveBeenCalledWith("add_text_watermark_to_images", {
-      payload: {
-        inputDir: "/tmp/input-images",
-        outputDir: "/tmp/output-images",
-        watermarkText: "仅限xxx使用,它用或复印无效",
-        watermarkLongEdgeFontRatio: 2.8,
-        watermarkOpacity: 18,
-        watermarkRotation: -35,
-        watermarkHorizontalSpacingRatio: 18,
-        watermarkVerticalSpacingRatio: 12,
-      },
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("add_text_watermark_to_images", {
+        payload: {
+          inputDir: "/tmp/input-images",
+          outputDir: "/tmp/output-images",
+          watermarkText: "仅限xxx使用,它用或复印无效",
+          watermarkLineCount: 3,
+          watermarkFullScreen: true,
+          watermarkOpacity: 0.2,
+          watermarkStripeGapChars: 2,
+          watermarkRowGapLines: 3,
+        },
+      });
     });
     expect(listenMock).toHaveBeenCalledWith(
       "batch-image-watermark-progress",
@@ -459,6 +569,9 @@ describe("App", () => {
     activateTab("提取内嵌图片");
 
     expect(screen.getByText("提取 PDF 内嵌图片")).toBeInTheDocument();
+    const form = screen.getByText("提取 PDF 内嵌图片").closest("form");
+    expect(form).toHaveClass("tool-card-dense");
+    expect(form?.querySelector(".picker-grid")).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "开始提取内嵌图片" }),
     ).toBeDisabled();
@@ -489,7 +602,7 @@ describe("App", () => {
     );
 
     activateTab("文字水印");
-    expect(screen.getByText("PDF 文字水印")).toBeInTheDocument();
+    expect(screen.getByText("批量 PDF 文字水印")).toBeInTheDocument();
     expect(screen.queryByText("提取 PDF 内嵌图片")).not.toBeInTheDocument();
   });
 
@@ -497,9 +610,14 @@ describe("App", () => {
     render(<App />);
     activateTab("文字水印");
 
+    const form = screen.getByText("批量 PDF 文字水印").closest("form");
+    expect(form).toHaveClass("tool-card-dense");
+    expect(form?.querySelector(".picker-grid")).not.toBeNull();
+    expect(form?.querySelector(".field-grid")).not.toBeNull();
     expect(
       screen.getByDisplayValue("仅限xxx使用,它用或复印无效"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("水印字号")).toHaveValue(28);
+    expect(screen.getByRole("button", { name: "开始批量生成水印 PDF" })).toBeDisabled();
   });
 });

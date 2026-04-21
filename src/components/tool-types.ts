@@ -8,6 +8,21 @@ export type WatermarkPdfResult = {
   outputPdfPath: string;
 };
 
+export type BatchPdfWatermarkResult = {
+  scannedFileCount: number;
+  successCount: number;
+  failureCount: number;
+  outputDir: string;
+};
+
+export type BatchPdfWatermarkProgress = {
+  scannedFileCount: number;
+  processedFileCount: number;
+  successCount: number;
+  failureCount: number;
+  currentFile: string | null;
+};
+
 export type ExtractImagesResult = {
   outputDir: string;
 };
