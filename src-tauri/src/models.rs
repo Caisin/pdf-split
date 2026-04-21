@@ -106,6 +106,8 @@ pub struct BatchVideoWatermarkInput {
     pub watermark_line_count: u32,
     pub watermark_full_screen: bool,
     pub watermark_opacity: f32,
+    #[serde(default = "default_slanted_watermark_rotation_degrees")]
+    pub watermark_rotation_degrees: f32,
     pub watermark_stripe_gap_chars: f32,
     pub watermark_row_gap_lines: f32,
 }
@@ -184,6 +186,12 @@ pub struct BatchImageWatermarkPreviewInput {
     pub watermark_line_count: u32,
     pub watermark_full_screen: bool,
     pub watermark_opacity: f32,
+    #[serde(default = "default_slanted_watermark_rotation_degrees")]
+    pub watermark_rotation_degrees: f32,
     pub watermark_stripe_gap_chars: f32,
     pub watermark_row_gap_lines: f32,
+}
+
+fn default_slanted_watermark_rotation_degrees() -> f32 {
+    -1.0_f32.to_degrees()
 }

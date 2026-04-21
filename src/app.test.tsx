@@ -284,13 +284,16 @@ describe("App", () => {
     render(<App />);
     activateTab("批量视频水印");
 
+    const fullscreenSwitch = screen.getByRole("switch", { name: "视频是否平铺" });
     expect(screen.getByText("批量视频文字水印")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "视频水印参数预览" })).toBeInTheDocument();
     expect(screen.getByLabelText("视频水印行数")).toHaveValue(10);
-    expect(screen.getByLabelText("视频水印透明度")).toHaveValue(0.5);
+    expect(screen.getByLabelText("视频水印透明度")).toHaveValue(0.3);
+    expect(screen.getByLabelText("视频水印倾斜角度")).toHaveValue(-35);
     expect(screen.getByLabelText("视频水印条间距")).toHaveValue(2);
     expect(screen.getByLabelText("视频水印行间距")).toHaveValue(3);
-    expect(screen.getByLabelText("视频铺满画面")).toBeChecked();
+    expect(fullscreenSwitch).toHaveAttribute("aria-checked", "true");
+    expect(fullscreenSwitch.closest(".field-grid-compact")).not.toBeNull();
     expect(screen.getByRole("button", { name: "开始批量生成视频水印" })).toBeDisabled();
   });
 
@@ -403,12 +406,54 @@ describe("App", () => {
             watermarkText: "仅限xxx使用,它用或复印无效",
             watermarkLineCount: 10,
             watermarkFullScreen: true,
-            watermarkOpacity: 0.5,
+            watermarkOpacity: 0.3,
+            watermarkRotationDegrees: -30,
             watermarkStripeGapChars: 2,
             watermarkRowGapLines: 3,
           },
         });
         return { bytes: [137, 80, 78, 71] };
+      }
+
+      return undefined;
+    });
+
+    render(<App />);
+    activateTab("批量视频水印");
+    fireEvent.change(screen.getByLabelText("视频水印倾斜角度"), {
+      target: { value: "-30", valueAsNumber: -30 },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "选择视频输入目录" }));
+    await act(async () => {});
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(screen.getByRole("img", { name: "真实预览图：cover.mp4" })).toHaveAttribute(
+      "src",
+      "blob:preview-1",
+    );
+  });
+
+  test("regenerates video preview after rotation changes and shows current rotation", async () => {
+    vi.useFakeTimers();
+    openMock.mockResolvedValue("/tmp/input-videos");
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "list_input_directory_videos") {
+        return {
+          files: ["cover.mp4"],
+        };
+      }
+
+      if (command === "generate_input_directory_video_preview") {
+        return {
+          bytes:
+            args?.payload?.watermarkRotationDegrees === -30
+              ? [137, 80, 78, 71, 1]
+              : [137, 80, 78, 71, 0],
+        };
       }
 
       return undefined;
@@ -428,6 +473,52 @@ describe("App", () => {
       "src",
       "blob:preview-1",
     );
+    expect(screen.getByText("真实预览：cover.mp4（倾斜角度 -35.0°）")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("视频水印倾斜角度"), {
+      target: { value: "-30", valueAsNumber: -30 },
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    const previewCalls = invokeMock.mock.calls.filter(
+      ([command]) => command === "generate_input_directory_video_preview",
+    );
+    expect(previewCalls).toHaveLength(2);
+    expect(previewCalls[1]?.[1]).toEqual({
+      payload: {
+        inputDir: "/tmp/input-videos",
+        relativePath: "cover.mp4",
+        watermarkText: "仅限xxx使用,它用或复印无效",
+        watermarkLineCount: 10,
+        watermarkFullScreen: true,
+        watermarkOpacity: 0.3,
+        watermarkRotationDegrees: -30,
+        watermarkStripeGapChars: 2,
+        watermarkRowGapLines: 3,
+      },
+    });
+    expect(screen.getByRole("img", { name: "真实预览图：cover.mp4" })).toHaveAttribute(
+      "src",
+      "blob:preview-2",
+    );
+    expect(screen.getByText("真实预览：cover.mp4（倾斜角度 -30.0°）")).toBeInTheDocument();
+  });
+
+  test("toggles video fullscreen mode through the switch control", () => {
+    render(<App />);
+    activateTab("批量视频水印");
+
+    const toggle = screen.getByRole("switch", { name: "视频是否平铺" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
   });
 
   test("shows batch video watermark progress and keeps submit disabled while running", async () => {
@@ -468,6 +559,9 @@ describe("App", () => {
 
     render(<App />);
     activateTab("批量视频水印");
+    fireEvent.change(screen.getByLabelText("视频水印倾斜角度"), {
+      target: { value: "-30", valueAsNumber: -30 },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "选择视频输入目录" }));
     fireEvent.click(screen.getByRole("button", { name: "选择视频输出目录" }));
@@ -484,7 +578,8 @@ describe("App", () => {
           watermarkText: "仅限xxx使用,它用或复印无效",
           watermarkLineCount: 10,
           watermarkFullScreen: true,
-          watermarkOpacity: 0.5,
+          watermarkOpacity: 0.3,
+          watermarkRotationDegrees: -30,
           watermarkStripeGapChars: 2,
           watermarkRowGapLines: 3,
         },

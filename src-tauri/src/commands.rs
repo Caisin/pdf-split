@@ -5,11 +5,14 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use kx_cmds::{
+    Cmds,
+    traits::video::{CmdVideo, SeriesRecutReq},
+};
 use kx_image::{
     BatchImageWatermarkProgress, BatchVideoWatermarkProgress, ImageFormat, Imgs,
     SlantedWatermarkOptions,
 };
-use kx_cmds::{Cmds, traits::video::{CmdVideo, SeriesRecutReq}};
 use kx_pdf::{PdfTextWatermarkOptions, Pdfs};
 use tauri::{Emitter, EventTarget, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
@@ -82,21 +85,15 @@ pub fn add_text_watermark(payload: PdfTextWatermarkInput) -> Result<WatermarkPdf
     let input_path = require_value("PDF 文件", payload.input_path)?;
     let output_dir = require_value("输出目录", payload.output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_long_edge_font_ratio = require_positive_number(
-        "长边字号比例",
-        payload.watermark_long_edge_font_ratio,
-    )?;
+    let watermark_long_edge_font_ratio =
+        require_positive_number("长边字号比例", payload.watermark_long_edge_font_ratio)?;
     let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
     let watermark_rotation_degrees =
         require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
-    let watermark_stripe_gap_chars = require_non_negative_number(
-        "条间距",
-        payload.watermark_stripe_gap_chars,
-    )?;
-    let watermark_row_gap_lines = require_non_negative_number(
-        "行间距",
-        payload.watermark_row_gap_lines,
-    )?;
+    let watermark_stripe_gap_chars =
+        require_non_negative_number("条间距", payload.watermark_stripe_gap_chars)?;
+    let watermark_row_gap_lines =
+        require_non_negative_number("行间距", payload.watermark_row_gap_lines)?;
     let options = PdfTextWatermarkOptions::new(&watermark_text)
         .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
         .with_opacity(watermark_opacity)
@@ -292,6 +289,7 @@ where
         payload.watermark_line_count,
         payload.watermark_full_screen,
         payload.watermark_opacity,
+        -1.0_f32.to_degrees(),
         payload.watermark_stripe_gap_chars,
         payload.watermark_row_gap_lines,
     )?;
@@ -324,8 +322,11 @@ where
         let relative_display = relative_path.to_string_lossy().replace('\\', "/");
         let output_path = output_root.join(relative_path);
 
-        match render_watermarked_image_to_path(source_path.as_path(), output_path.as_path(), &options)
-        {
+        match render_watermarked_image_to_path(
+            source_path.as_path(),
+            output_path.as_path(),
+            &options,
+        ) {
             Ok(()) => result.success_count += 1,
             Err(_) => result.failure_count += 1,
         }
@@ -353,21 +354,15 @@ where
     let output_dir = require_value("输出目录", payload.output_dir)?;
     ensure_distinct_directories(&input_dir, &output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_long_edge_font_ratio = require_positive_number(
-        "长边字号比例",
-        payload.watermark_long_edge_font_ratio,
-    )?;
+    let watermark_long_edge_font_ratio =
+        require_positive_number("长边字号比例", payload.watermark_long_edge_font_ratio)?;
     let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
     let watermark_rotation_degrees =
         require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
-    let watermark_stripe_gap_chars = require_non_negative_number(
-        "条间距",
-        payload.watermark_stripe_gap_chars,
-    )?;
-    let watermark_row_gap_lines = require_non_negative_number(
-        "行间距",
-        payload.watermark_row_gap_lines,
-    )?;
+    let watermark_stripe_gap_chars =
+        require_non_negative_number("条间距", payload.watermark_stripe_gap_chars)?;
+    let watermark_row_gap_lines =
+        require_non_negative_number("行间距", payload.watermark_row_gap_lines)?;
     let options = PdfTextWatermarkOptions::new(&watermark_text)
         .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
         .with_opacity(watermark_opacity)
@@ -430,7 +425,7 @@ where
 
 fn run_batch_video_watermark<F>(
     payload: BatchVideoWatermarkInput,
-    mut on_progress: F,
+    on_progress: F,
 ) -> Result<BatchVideoWatermarkResult, String>
 where
     F: FnMut(BatchVideoWatermarkProgress),
@@ -444,6 +439,7 @@ where
         payload.watermark_line_count,
         payload.watermark_full_screen,
         payload.watermark_opacity,
+        payload.watermark_rotation_degrees,
         payload.watermark_stripe_gap_chars,
         payload.watermark_row_gap_lines,
     )?;
@@ -452,7 +448,7 @@ where
         Path::new(&input_dir),
         Path::new(&output_dir),
         &options,
-        |progress| on_progress(progress),
+        on_progress,
     )
     .map_err(|err| err.to_string())?;
 
@@ -477,7 +473,10 @@ struct SeriesRecutProgressState {
     current_file: Option<String>,
 }
 
-fn run_series_recut<F>(payload: SeriesRecutInput, mut on_progress: F) -> Result<SeriesRecutResult, String>
+fn run_series_recut<F>(
+    payload: SeriesRecutInput,
+    mut on_progress: F,
+) -> Result<SeriesRecutResult, String>
 where
     F: FnMut(SeriesRecutProgressState),
 {
@@ -908,6 +907,7 @@ fn generate_preview_image_bytes(
         payload.watermark_line_count,
         payload.watermark_full_screen,
         payload.watermark_opacity,
+        -1.0_f32.to_degrees(),
         payload.watermark_stripe_gap_chars,
         payload.watermark_row_gap_lines,
     )?;
@@ -936,6 +936,7 @@ fn generate_video_preview_image_bytes(
         payload.watermark_line_count,
         payload.watermark_full_screen,
         payload.watermark_opacity,
+        payload.watermark_rotation_degrees,
         payload.watermark_stripe_gap_chars,
         payload.watermark_row_gap_lines,
     )?;
@@ -967,7 +968,7 @@ fn resolve_preview_image_path(root: &Path, relative_path: &str) -> Result<PathBu
     let preview_path = preview_path
         .canonicalize()
         .map_err(|_| "预览图片不存在".to_string())?;
-    if !preview_path.starts_with(&root)
+    if !preview_path.starts_with(root)
         || !preview_path.is_file()
         || !is_preview_image_path(&preview_path)
     {
@@ -992,7 +993,7 @@ fn resolve_preview_video_path(root: &Path, relative_path: &str) -> Result<PathBu
     let preview_path = preview_path
         .canonicalize()
         .map_err(|_| "预览视频不存在".to_string())?;
-    if !preview_path.starts_with(&root)
+    if !preview_path.starts_with(root)
         || !preview_path.is_file()
         || !is_preview_video_path(&preview_path)
     {
@@ -1069,21 +1070,22 @@ fn build_slanted_watermark_options<'a>(
     watermark_line_count: u32,
     watermark_full_screen: bool,
     watermark_opacity: f32,
+    watermark_rotation_degrees: f32,
     watermark_stripe_gap_chars: f32,
     watermark_row_gap_lines: f32,
 ) -> Result<SlantedWatermarkOptions<'a>, String> {
     let line_count = require_positive_count("水印行数", watermark_line_count)?;
     let opacity = require_zero_to_one_number("水印透明度", watermark_opacity)?;
+    let rotation_degrees = require_finite_number("水印角度", watermark_rotation_degrees)?;
     let stripe_gap_chars = require_non_negative_number("条间距", watermark_stripe_gap_chars)?;
     let row_gap_lines = require_non_negative_number("行间距", watermark_row_gap_lines)?;
 
-    Ok(
-        SlantedWatermarkOptions::new(watermark_text, line_count)
-            .with_full_screen(watermark_full_screen)
-            .with_opacity(opacity)
-            .with_stripe_gap_chars(stripe_gap_chars)
-            .with_row_gap_lines(row_gap_lines),
-    )
+    Ok(SlantedWatermarkOptions::new(watermark_text, line_count)
+        .with_full_screen(watermark_full_screen)
+        .with_opacity(opacity)
+        .with_rotation_degrees(rotation_degrees)
+        .with_stripe_gap_chars(stripe_gap_chars)
+        .with_row_gap_lines(row_gap_lines))
 }
 
 fn render_watermarked_image(
@@ -1095,6 +1097,7 @@ fn render_watermarked_image(
         .slanted(options.text, options.line_count)
         .full_screen(options.full_screen)
         .opacity(options.opacity)
+        .rotation_degrees(options.rotation_degrees)
         .stripe_gap_chars(options.stripe_gap_chars)
         .row_gap_lines(options.row_gap_lines)
         .render_image(image)
@@ -1117,10 +1120,7 @@ fn render_watermarked_image_to_path(
     save_rendered_image(rendered, output_path)
 }
 
-fn save_rendered_image(
-    image: kx_image::DynamicImage,
-    output_path: &Path,
-) -> Result<(), String> {
+fn save_rendered_image(image: kx_image::DynamicImage, output_path: &Path) -> Result<(), String> {
     match image_format_from_path(output_path)? {
         ImageFormat::Jpeg => image
             .to_rgb8()
@@ -1152,9 +1152,9 @@ fn image_format_from_path(path: &Path) -> Result<ImageFormat, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        add_text_watermark, extract_embedded_images, generate_preview_image_bytes,
-        list_previewable_images, run_batch_image_watermark, run_batch_pdf_watermark,
-        split_pdf_to_images,
+        add_text_watermark, build_slanted_watermark_options, extract_embedded_images,
+        generate_preview_image_bytes, list_previewable_images, render_watermarked_image,
+        run_batch_image_watermark, run_batch_pdf_watermark, split_pdf_to_images,
     };
     use crate::models::{
         BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchPdfTextWatermarkInput,
@@ -1210,16 +1210,19 @@ mod tests {
 
     #[test]
     fn batch_pdf_watermark_command_rejects_same_input_and_output_dir() {
-        let err = run_batch_pdf_watermark(BatchPdfTextWatermarkInput {
-            input_dir: "/tmp/pdfs".into(),
-            output_dir: "/tmp/pdfs/".into(),
-            watermark_text: "wm".into(),
-            watermark_long_edge_font_ratio: 0.028,
-            watermark_opacity: 50.0 / 255.0,
-            watermark_rotation_degrees: -57.29578,
-            watermark_stripe_gap_chars: 2.0,
-            watermark_row_gap_lines: 3.0,
-        }, |_| {})
+        let err = run_batch_pdf_watermark(
+            BatchPdfTextWatermarkInput {
+                input_dir: "/tmp/pdfs".into(),
+                output_dir: "/tmp/pdfs/".into(),
+                watermark_text: "wm".into(),
+                watermark_long_edge_font_ratio: 0.028,
+                watermark_opacity: 50.0 / 255.0,
+                watermark_rotation_degrees: -57.29578,
+                watermark_stripe_gap_chars: 2.0,
+                watermark_row_gap_lines: 3.0,
+            },
+            |_| {},
+        )
         .expect_err("same directories should fail");
 
         assert!(err.contains("输入目录与输出目录不能相同"));
@@ -1234,16 +1237,19 @@ mod tests {
         fs::create_dir_all(&nested_dir).expect("nested dir should be created");
         create_test_pdf(&nested_dir.join("demo.pdf")).expect("pdf should be written");
 
-        let result = run_batch_pdf_watermark(BatchPdfTextWatermarkInput {
-            input_dir: input_dir.to_string_lossy().into_owned(),
-            output_dir: output_dir.to_string_lossy().into_owned(),
-            watermark_text: "wm".into(),
-            watermark_long_edge_font_ratio: 0.028,
-            watermark_opacity: 50.0 / 255.0,
-            watermark_rotation_degrees: -57.29578,
-            watermark_stripe_gap_chars: 2.0,
-            watermark_row_gap_lines: 3.0,
-        }, |_| {})
+        let result = run_batch_pdf_watermark(
+            BatchPdfTextWatermarkInput {
+                input_dir: input_dir.to_string_lossy().into_owned(),
+                output_dir: output_dir.to_string_lossy().into_owned(),
+                watermark_text: "wm".into(),
+                watermark_long_edge_font_ratio: 0.028,
+                watermark_opacity: 50.0 / 255.0,
+                watermark_rotation_degrees: -57.29578,
+                watermark_stripe_gap_chars: 2.0,
+                watermark_row_gap_lines: 3.0,
+            },
+            |_| {},
+        )
         .expect("batch pdf watermark should succeed");
 
         assert_eq!(result.scanned_file_count, 1);
@@ -1353,6 +1359,36 @@ mod tests {
     }
 
     #[test]
+    fn build_slanted_watermark_options_preserves_rotation_degrees() {
+        let options = build_slanted_watermark_options("wm", 3, true, 0.2, -30.0, 2.0, 3.0)
+            .expect("options should be built");
+
+        assert_eq!(options.rotation_degrees, -30.0);
+    }
+
+    #[test]
+    fn render_watermarked_image_respects_rotation_degrees() {
+        let temp_dir = TestDir::new();
+        let source_path = temp_dir.path().join("source.png");
+        create_test_png(&source_path).expect("png should be written");
+
+        let low_rotation = build_slanted_watermark_options("wm", 3, true, 0.2, -20.0, 2.0, 3.0)
+            .expect("low rotation options should build");
+        let high_rotation =
+            build_slanted_watermark_options("wm", 3, true, 0.2, -60.0, 2.0, 3.0)
+                .expect("high rotation options should build");
+
+        let low = render_watermarked_image(&source_path, &low_rotation)
+            .expect("low rotation render should succeed")
+            .to_rgba8();
+        let high = render_watermarked_image(&source_path, &high_rotation)
+            .expect("high rotation render should succeed")
+            .to_rgba8();
+
+        assert_ne!(low, high);
+    }
+
+    #[test]
     fn list_previewable_images_returns_sorted_relative_image_paths() {
         let temp_dir = TestDir::new();
         let nested_dir = temp_dir.path().join("nested");
@@ -1384,6 +1420,7 @@ mod tests {
             watermark_line_count: 3,
             watermark_full_screen: true,
             watermark_opacity: 0.2,
+            watermark_rotation_degrees: -1.0_f32.to_degrees(),
             watermark_stripe_gap_chars: 2.0,
             watermark_row_gap_lines: 3.0,
         })
@@ -1420,6 +1457,16 @@ mod tests {
 
     fn create_test_pdf(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         fs::write(path, minimal_pdf_bytes())?;
+        Ok(())
+    }
+
+    fn create_test_png(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let image = kx_image::RgbaImage::from_pixel(
+            120,
+            80,
+            kx_image::Rgba([245_u8, 245_u8, 245_u8, 255_u8]),
+        );
+        image.save(path)?;
         Ok(())
     }
 

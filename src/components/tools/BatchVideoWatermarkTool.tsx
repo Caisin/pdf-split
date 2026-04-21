@@ -13,6 +13,7 @@ import type {
 } from "../tool-types";
 
 const DEFAULT_WATERMARK_TEXT = "仅限xxx使用,它用或复印无效";
+const DEFAULT_WATERMARK_ROTATION_DEGREES = -35;
 const PREVIEW_DEBOUNCE_MS = 400;
 
 export function BatchVideoWatermarkTool() {
@@ -21,7 +22,8 @@ export function BatchVideoWatermarkTool() {
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
   const [lineCount, setLineCount] = useState(10);
   const [fullScreen, setFullScreen] = useState(true);
-  const [opacity, setOpacity] = useState(0.5);
+  const [opacity, setOpacity] = useState(0.3);
+  const [rotationDegrees, setRotationDegrees] = useState(DEFAULT_WATERMARK_ROTATION_DEGREES);
   const [stripeGapChars, setStripeGapChars] = useState(2);
   const [rowGapLines, setRowGapLines] = useState(3);
   const [previewVideoPath, setPreviewVideoPath] = useState("");
@@ -46,6 +48,7 @@ export function BatchVideoWatermarkTool() {
     Number.isFinite(opacity) &&
     opacity >= 0 &&
     opacity <= 1 &&
+    Number.isFinite(rotationDegrees) &&
     Number.isFinite(stripeGapChars) &&
     stripeGapChars >= 0 &&
     Number.isFinite(rowGapLines) &&
@@ -78,6 +81,7 @@ export function BatchVideoWatermarkTool() {
             watermarkLineCount: lineCount,
             watermarkFullScreen: fullScreen,
             watermarkOpacity: opacity,
+            watermarkRotationDegrees: rotationDegrees,
             watermarkStripeGapChars: stripeGapChars,
             watermarkRowGapLines: rowGapLines,
           },
@@ -95,7 +99,9 @@ export function BatchVideoWatermarkTool() {
         previewObjectUrlRef.current = nextObjectUrl;
         setPreviewImageUrl(nextObjectUrl);
         setPreviewBusy(false);
-        setPreviewImageMessage(`真实预览：${previewVideoPath}`);
+        setPreviewImageMessage(
+          `真实预览：${previewVideoPath}（倾斜角度 ${formatRotationDegrees(rotationDegrees)}°）`,
+        );
       } catch (_error) {
         if (!active || previewRequestIdRef.current !== requestId) {
           return;
@@ -110,7 +116,17 @@ export function BatchVideoWatermarkTool() {
       active = false;
       window.clearTimeout(previewTimer);
     };
-  }, [fullScreen, inputDir, lineCount, opacity, previewVideoPath, rowGapLines, stripeGapChars, watermarkText]);
+  }, [
+    fullScreen,
+    inputDir,
+    lineCount,
+    opacity,
+    previewVideoPath,
+    rotationDegrees,
+    rowGapLines,
+    stripeGapChars,
+    watermarkText,
+  ]);
 
   async function handlePickInputDir() {
     const selected = await pickOutputDir();
@@ -190,6 +206,7 @@ export function BatchVideoWatermarkTool() {
           watermarkLineCount: lineCount,
           watermarkFullScreen: fullScreen,
           watermarkOpacity: opacity,
+          watermarkRotationDegrees: rotationDegrees,
           watermarkStripeGapChars: stripeGapChars,
           watermarkRowGapLines: rowGapLines,
         },
@@ -285,6 +302,24 @@ export function BatchVideoWatermarkTool() {
         </label>
 
         <label className="field">
+          <span>倾斜角度（度）</span>
+          <div className="input-shell">
+            <input
+              aria-label="视频水印倾斜角度"
+              type="number"
+              min={-89}
+              max={89}
+              step={1}
+              value={rotationDegrees}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.valueAsNumber;
+                setRotationDegrees(Number.isFinite(nextValue) ? nextValue : Number.NaN);
+              }}
+            />
+          </div>
+        </label>
+
+        <label className="field">
           <span>条间距（字符倍数）</span>
           <div className="input-shell">
             <input
@@ -317,19 +352,26 @@ export function BatchVideoWatermarkTool() {
             />
           </div>
         </label>
-      </div>
 
-      <label className="field field-checkbox">
-        <span>铺满画面</span>
-        <div className="input-shell">
-          <input
-            aria-label="视频铺满画面"
-            checked={fullScreen}
-            type="checkbox"
-            onChange={(event) => setFullScreen(event.currentTarget.checked)}
-          />
-        </div>
-      </label>
+        <label className="field">
+          <span>是否平铺</span>
+          <div className="input-shell input-shell-switch">
+            <button
+              aria-label="视频是否平铺"
+              aria-checked={fullScreen}
+              className="switch-button"
+              role="switch"
+              type="button"
+              onClick={() => setFullScreen((current) => !current)}
+            >
+              <span className="switch-track" aria-hidden="true">
+                <span className="switch-thumb" />
+              </span>
+              <span className="switch-copy">{fullScreen ? "是" : "否"}</span>
+            </button>
+          </div>
+        </label>
+      </div>
 
       <section className="preview-panel">
         <div className="preview-panel-head">
@@ -397,4 +439,8 @@ function formatBatchVideoProgress(progress: BatchVideoWatermarkProgress) {
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
   return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，新增水印图 ${progress.generatedOverlayCount}，复用水印图 ${progress.reusedOverlayCount}）${currentFile}`;
+}
+
+function formatRotationDegrees(rotationDegrees: number) {
+  return rotationDegrees.toFixed(1);
 }
