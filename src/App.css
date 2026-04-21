@@ -84,15 +84,15 @@ button:disabled {
 .tab-button {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   flex: 0 0 auto;
-  min-height: 52px;
-  padding: 10px 16px;
+  min-height: 38px;
+  padding: 7px 11px;
   border-radius: 999px;
   border: 0;
   background: transparent;
   color: #806654;
-  font-size: 0.96rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   transition:
@@ -106,8 +106,8 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
   color: #9a6c4b;
@@ -115,8 +115,8 @@ button:disabled {
 }
 
 .tab-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 11px;
+  height: 11px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.8;
@@ -538,12 +538,12 @@ button:disabled {
   }
 
   .tab-button {
-    min-height: 48px;
-    padding: 8px 14px;
+    min-height: 38px;
+    padding: 7px 11px;
   }
 
   .tab-label {
-    font-size: 0.9rem;
+    font-size: 0.62rem;
   }
 
   .picker-row,

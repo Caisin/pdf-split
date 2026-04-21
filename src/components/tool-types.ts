@@ -23,6 +23,23 @@ export type BatchPdfWatermarkProgress = {
   currentFile: string | null;
 };
 
+export type BatchVideoWatermarkResult = {
+  scannedFileCount: number;
+  successCount: number;
+  generatedOverlayCount: number;
+  reusedOverlayCount: number;
+  outputDir: string;
+};
+
+export type BatchVideoWatermarkProgress = {
+  scannedFileCount: number;
+  processedFileCount: number;
+  successCount: number;
+  generatedOverlayCount: number;
+  reusedOverlayCount: number;
+  currentFile: string | null;
+};
+
 export type ExtractImagesResult = {
   outputDir: string;
 };
@@ -46,8 +63,25 @@ export type InputDirectoryImageListResult = {
   files: string[];
 };
 
+export type InputDirectoryVideoListResult = {
+  files: string[];
+};
+
 export type PreviewImageBytesResult = {
   bytes: number[];
+};
+
+export type SeriesRecutResult = {
+  generatedFileCount: number;
+  outputDir: string;
+  outputFiles: string[];
+};
+
+export type SeriesRecutProgress = {
+  totalCount: number;
+  processedCount: number;
+  currentStage: string;
+  currentFile: string | null;
 };
 
 export type MessageTone = "idle" | "success" | "error";

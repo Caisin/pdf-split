@@ -7,12 +7,29 @@ import { pathsLookSame, pickOutputDir } from "../common/dialog";
 import type { BatchPdfWatermarkProgress, BatchPdfWatermarkResult, MessageTone } from "../tool-types";
 
 const DEFAULT_WATERMARK_TEXT = "仅限xxx使用,它用或复印无效";
+const DEFAULT_WATERMARK_LONG_EDGE_FONT_RATIO = 0.028;
+const DEFAULT_WATERMARK_OPACITY = 50 / 255;
+const DEFAULT_WATERMARK_ROTATION_DEGREES = (-1 * 180) / Math.PI;
+const DEFAULT_WATERMARK_STRIPE_GAP_CHARS = 2;
+const DEFAULT_WATERMARK_ROW_GAP_LINES = 3;
 
 export function PdfWatermarkTool() {
   const [inputDir, setInputDir] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
-  const [watermarkFontSize, setWatermarkFontSize] = useState(28);
+  const [watermarkLongEdgeFontRatio, setWatermarkLongEdgeFontRatio] = useState(
+    DEFAULT_WATERMARK_LONG_EDGE_FONT_RATIO,
+  );
+  const [watermarkOpacity, setWatermarkOpacity] = useState(DEFAULT_WATERMARK_OPACITY);
+  const [watermarkRotationDegrees, setWatermarkRotationDegrees] = useState(
+    DEFAULT_WATERMARK_ROTATION_DEGREES,
+  );
+  const [watermarkStripeGapChars, setWatermarkStripeGapChars] = useState(
+    DEFAULT_WATERMARK_STRIPE_GAP_CHARS,
+  );
+  const [watermarkRowGapLines, setWatermarkRowGapLines] = useState(
+    DEFAULT_WATERMARK_ROW_GAP_LINES,
+  );
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<BatchPdfWatermarkProgress | null>(null);
   const [message, setMessage] = useState("");
@@ -24,8 +41,16 @@ export function PdfWatermarkTool() {
     outputDir !== "" &&
     !directoryConflict &&
     watermarkText.trim() !== "" &&
-    Number.isFinite(watermarkFontSize) &&
-    watermarkFontSize > 0;
+    Number.isFinite(watermarkLongEdgeFontRatio) &&
+    watermarkLongEdgeFontRatio > 0 &&
+    Number.isFinite(watermarkOpacity) &&
+    watermarkOpacity >= 0 &&
+    watermarkOpacity <= 1 &&
+    Number.isFinite(watermarkRotationDegrees) &&
+    Number.isFinite(watermarkStripeGapChars) &&
+    watermarkStripeGapChars >= 0 &&
+    Number.isFinite(watermarkRowGapLines) &&
+    watermarkRowGapLines >= 0;
 
   async function handlePickInputDir() {
     const selected = await pickOutputDir();
@@ -73,7 +98,11 @@ export function PdfWatermarkTool() {
           inputDir,
           outputDir,
           watermarkText,
-          watermarkFontSize,
+          watermarkLongEdgeFontRatio,
+          watermarkOpacity,
+          watermarkRotationDegrees,
+          watermarkStripeGapChars,
+          watermarkRowGapLines,
         },
       });
       setProgress(null);
@@ -130,20 +159,89 @@ export function PdfWatermarkTool() {
         </div>
       </label>
 
-      <div className="field-grid">
+      <div className="field-grid field-grid-compact">
         <label className="field">
-          <span>水印字号</span>
+          <span>长边字号比例</span>
           <div className="input-shell">
             <input
-              aria-label="水印字号"
+              aria-label="PDF 长边字号比例"
               type="number"
-              min={12}
-              max={72}
-              step={1}
-              value={watermarkFontSize}
+              min={0.001}
+              step="any"
+              value={watermarkLongEdgeFontRatio}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setWatermarkFontSize(Number.isFinite(nextValue) ? nextValue : 0);
+                setWatermarkLongEdgeFontRatio(Number.isFinite(nextValue) ? nextValue : 0);
+              }}
+            />
+          </div>
+        </label>
+
+        <label className="field">
+          <span>透明度 (0-1)</span>
+          <div className="input-shell">
+            <input
+              aria-label="PDF 水印透明度"
+              type="number"
+              min={0}
+              max={1}
+              step="any"
+              value={watermarkOpacity}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.valueAsNumber;
+                setWatermarkOpacity(Number.isFinite(nextValue) ? nextValue : -1);
+              }}
+            />
+          </div>
+        </label>
+
+        <label className="field">
+          <span>旋转角度</span>
+          <div className="input-shell">
+            <input
+              aria-label="PDF 水印旋转角度"
+              type="number"
+              min={-89}
+              max={89}
+              step="any"
+              value={watermarkRotationDegrees}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.valueAsNumber;
+                setWatermarkRotationDegrees(Number.isFinite(nextValue) ? nextValue : 0);
+              }}
+            />
+          </div>
+        </label>
+
+        <label className="field">
+          <span>条间距（字符倍数）</span>
+          <div className="input-shell">
+            <input
+              aria-label="PDF 水印条间距"
+              type="number"
+              min={0}
+              step="any"
+              value={watermarkStripeGapChars}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.valueAsNumber;
+                setWatermarkStripeGapChars(Number.isFinite(nextValue) ? nextValue : -1);
+              }}
+            />
+          </div>
+        </label>
+
+        <label className="field">
+          <span>行间距（行高倍数）</span>
+          <div className="input-shell">
+            <input
+              aria-label="PDF 水印行间距"
+              type="number"
+              min={0}
+              step="any"
+              value={watermarkRowGapLines}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.valueAsNumber;
+                setWatermarkRowGapLines(Number.isFinite(nextValue) ? nextValue : -1);
               }}
             />
           </div>

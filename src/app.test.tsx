@@ -89,6 +89,8 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: "提取内嵌图片" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "文字水印" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "批量图片水印" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "批量视频水印" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "剧集切分" })).toBeInTheDocument();
     expect(screen.getByText("PDF 转图片")).toBeInTheDocument();
     expect(screen.queryByText("PDF 文字水印")).not.toBeInTheDocument();
   });
@@ -111,10 +113,10 @@ describe("App", () => {
     expect(form?.querySelector(".field-grid")).not.toBeNull();
   });
 
-  test("disables watermark submit when watermark font size is invalid", () => {
+  test("disables watermark submit when pdf long edge font ratio is invalid", () => {
     render(<App />);
     activateTab("文字水印");
-    fireEvent.change(screen.getByLabelText("水印字号"), {
+    fireEvent.change(screen.getByLabelText("PDF 长边字号比例"), {
       target: { value: "0", valueAsNumber: 0 },
     });
 
@@ -151,7 +153,11 @@ describe("App", () => {
           inputDir: "/tmp/input-pdfs",
           outputDir: "/tmp/output-dir",
           watermarkText: "仅限xxx使用,它用或复印无效",
-          watermarkFontSize: 28,
+          watermarkLongEdgeFontRatio: 0.028,
+          watermarkOpacity: 50 / 255,
+          watermarkRotationDegrees: (-1 * 180) / Math.PI,
+          watermarkStripeGapChars: 2,
+          watermarkRowGapLines: 3,
         },
       });
     });
@@ -214,7 +220,11 @@ describe("App", () => {
           inputDir: "/tmp/input-pdfs",
           outputDir: "/tmp/output-pdfs",
           watermarkText: "仅限xxx使用,它用或复印无效",
-          watermarkFontSize: 28,
+          watermarkLongEdgeFontRatio: 0.028,
+          watermarkOpacity: 50 / 255,
+          watermarkRotationDegrees: (-1 * 180) / Math.PI,
+          watermarkStripeGapChars: 2,
+          watermarkRowGapLines: 3,
         },
       });
     });
@@ -259,8 +269,8 @@ describe("App", () => {
     expect(screen.getByText("批量图片文字水印")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "图片水印参数预览" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "预览图片" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("水印行数")).toHaveValue(3);
-    expect(screen.getByLabelText("图片水印透明度")).toHaveValue(0.2);
+    expect(screen.getByLabelText("水印行数")).toHaveValue(10);
+    expect(screen.getByLabelText("图片水印透明度")).toHaveValue(0.5);
     expect(screen.getByLabelText("图片水印条间距")).toHaveValue(2);
     expect(screen.getByLabelText("图片水印行间距")).toHaveValue(3);
     expect(screen.getByLabelText("铺满画面")).toBeChecked();
@@ -268,6 +278,250 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: "开始批量生成图片水印" }),
     ).toBeDisabled();
+  });
+
+  test("renders batch video watermark section and keeps submit disabled by default", () => {
+    render(<App />);
+    activateTab("批量视频水印");
+
+    expect(screen.getByText("批量视频文字水印")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "视频水印参数预览" })).toBeInTheDocument();
+    expect(screen.getByLabelText("视频水印行数")).toHaveValue(10);
+    expect(screen.getByLabelText("视频水印透明度")).toHaveValue(0.5);
+    expect(screen.getByLabelText("视频水印条间距")).toHaveValue(2);
+    expect(screen.getByLabelText("视频水印行间距")).toHaveValue(3);
+    expect(screen.getByLabelText("视频铺满画面")).toBeChecked();
+    expect(screen.getByRole("button", { name: "开始批量生成视频水印" })).toBeDisabled();
+  });
+
+  test("renders series recut section and keeps submit disabled by default", () => {
+    render(<App />);
+    activateTab("剧集切分");
+
+    expect(screen.getByRole("heading", { name: "剧集切分" })).toBeInTheDocument();
+    expect(screen.getByLabelText("前面保留集数")).toHaveValue(1);
+    expect(screen.getByLabelText("目标总集数")).toHaveValue(3);
+    expect(screen.getByRole("button", { name: "开始剧集切分" })).toBeDisabled();
+  });
+
+  test("shows series recut progress and keeps submit disabled while running", async () => {
+    openMock
+      .mockResolvedValueOnce("/tmp/input-series")
+      .mockResolvedValueOnce("/tmp/output-series");
+
+    let resolveInvoke:
+      | ((value: {
+          generatedFileCount: number;
+          outputDir: string;
+          outputFiles: string[];
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation(async (command) => {
+      if (command !== "video_recut_series") {
+        return undefined;
+      }
+
+      return await new Promise<{
+        generatedFileCount: number;
+        outputDir: string;
+        outputFiles: string[];
+      }>((resolve) => {
+        resolveInvoke = resolve;
+      });
+    });
+
+    render(<App />);
+    activateTab("剧集切分");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择剧集输入目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择剧集输出目录" }));
+    await screen.findByDisplayValue("/tmp/input-series");
+    await screen.findByDisplayValue("/tmp/output-series");
+    fireEvent.click(screen.getByRole("button", { name: "开始剧集切分" }));
+
+    expect(await screen.findByRole("button", { name: "处理中..." })).toBeDisabled();
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("video_recut_series", {
+        payload: {
+          inputDir: "/tmp/input-series",
+          outputDir: "/tmp/output-series",
+          keepCount: 1,
+          totalCount: 3,
+        },
+      });
+    });
+    expect(listenMock).toHaveBeenCalledWith(
+      "series-recut-progress",
+      expect.any(Function),
+    );
+
+    await act(async () => {
+      getProgressHandler()?.({
+        payload: {
+          totalCount: 3,
+          processedCount: 1,
+          currentStage: "执行剧集切分",
+          currentFile: "01.mp4",
+        },
+      });
+    });
+
+    expect(await screen.findByRole("progressbar", { name: "剧集切分处理进度" })).toHaveValue(1);
+    expect(
+      screen.getAllByText("处理中：1 / 3（执行剧集切分）当前文件 01.mp4"),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      resolveInvoke?.({
+        generatedFileCount: 3,
+        outputDir: "/tmp/output-series",
+        outputFiles: [
+          "/tmp/output-series/01.mp4",
+          "/tmp/output-series/02.mp4",
+          "/tmp/output-series/03.mp4",
+        ],
+      });
+    });
+  });
+
+  test("loads first video preview frame from the selected input directory", async () => {
+    vi.useFakeTimers();
+    openMock.mockResolvedValue("/tmp/input-videos");
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "list_input_directory_videos") {
+        expect(args).toEqual({ inputDir: "/tmp/input-videos" });
+        return {
+          files: ["cover.mp4", "nested/demo.mov"],
+        };
+      }
+
+      if (command === "generate_input_directory_video_preview") {
+        expect(args).toEqual({
+          payload: {
+            inputDir: "/tmp/input-videos",
+            relativePath: "cover.mp4",
+            watermarkText: "仅限xxx使用,它用或复印无效",
+            watermarkLineCount: 10,
+            watermarkFullScreen: true,
+            watermarkOpacity: 0.5,
+            watermarkStripeGapChars: 2,
+            watermarkRowGapLines: 3,
+          },
+        });
+        return { bytes: [137, 80, 78, 71] };
+      }
+
+      return undefined;
+    });
+
+    render(<App />);
+    activateTab("批量视频水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择视频输入目录" }));
+    await act(async () => {});
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(screen.getByRole("img", { name: "真实预览图：cover.mp4" })).toHaveAttribute(
+      "src",
+      "blob:preview-1",
+    );
+  });
+
+  test("shows batch video watermark progress and keeps submit disabled while running", async () => {
+    openMock
+      .mockResolvedValueOnce("/tmp/input-videos")
+      .mockResolvedValueOnce("/tmp/output-videos");
+
+    let resolveInvoke:
+      | ((value: {
+          scannedFileCount: number;
+          successCount: number;
+          generatedOverlayCount: number;
+          reusedOverlayCount: number;
+          outputDir: string;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation(async (command) => {
+      if (command === "list_input_directory_videos") {
+        return { files: ["cover.mp4"] };
+      }
+      if (command === "generate_input_directory_video_preview") {
+        return { bytes: [137, 80, 78, 71] };
+      }
+      if (command !== "add_slanted_watermark_to_videos") {
+        return undefined;
+      }
+
+      return await new Promise<{
+        scannedFileCount: number;
+        successCount: number;
+        generatedOverlayCount: number;
+        reusedOverlayCount: number;
+        outputDir: string;
+      }>((resolve) => {
+        resolveInvoke = resolve;
+      });
+    });
+
+    render(<App />);
+    activateTab("批量视频水印");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择视频输入目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择视频输出目录" }));
+    await screen.findByDisplayValue("/tmp/input-videos");
+    await screen.findByDisplayValue("/tmp/output-videos");
+    fireEvent.click(screen.getByRole("button", { name: "开始批量生成视频水印" }));
+
+    expect(await screen.findByRole("button", { name: "处理中..." })).toBeDisabled();
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("add_slanted_watermark_to_videos", {
+        payload: {
+          inputDir: "/tmp/input-videos",
+          outputDir: "/tmp/output-videos",
+          watermarkText: "仅限xxx使用,它用或复印无效",
+          watermarkLineCount: 10,
+          watermarkFullScreen: true,
+          watermarkOpacity: 0.5,
+          watermarkStripeGapChars: 2,
+          watermarkRowGapLines: 3,
+        },
+      });
+    });
+    expect(listenMock).toHaveBeenCalledWith(
+      "batch-video-watermark-progress",
+      expect.any(Function),
+    );
+
+    await act(async () => {
+      getProgressHandler()?.({
+        payload: {
+          scannedFileCount: 6,
+          processedFileCount: 2,
+          successCount: 2,
+          generatedOverlayCount: 1,
+          reusedOverlayCount: 1,
+          currentFile: "nested/demo.mp4",
+        },
+      });
+    });
+
+    expect(await screen.findByRole("progressbar", { name: "视频水印处理进度" })).toHaveValue(2);
+    expect(
+      screen.getAllByText("处理中：2 / 6（成功 2，新增水印图 1，复用水印图 1）当前文件 nested/demo.mp4"),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      resolveInvoke?.({
+        scannedFileCount: 6,
+        successCount: 6,
+        generatedOverlayCount: 2,
+        reusedOverlayCount: 4,
+        outputDir: "/tmp/output-videos",
+      });
+    });
   });
 
   test("loads previewable images from the selected input directory and previews the chosen image", async () => {
@@ -523,9 +777,9 @@ describe("App", () => {
           inputDir: "/tmp/input-images",
           outputDir: "/tmp/output-images",
           watermarkText: "仅限xxx使用,它用或复印无效",
-          watermarkLineCount: 3,
+          watermarkLineCount: 10,
           watermarkFullScreen: true,
-          watermarkOpacity: 0.2,
+          watermarkOpacity: 0.5,
           watermarkStripeGapChars: 2,
           watermarkRowGapLines: 3,
         },
@@ -606,18 +860,22 @@ describe("App", () => {
     expect(screen.queryByText("提取 PDF 内嵌图片")).not.toBeInTheDocument();
   });
 
-  test("prefills watermark text and exposes font size control", () => {
+  test("prefills watermark text and exposes latest upstream pdf watermark controls", () => {
     render(<App />);
     activateTab("文字水印");
 
     const form = screen.getByText("批量 PDF 文字水印").closest("form");
     expect(form).toHaveClass("tool-card-dense");
     expect(form?.querySelector(".picker-grid")).not.toBeNull();
-    expect(form?.querySelector(".field-grid")).not.toBeNull();
+    expect(form?.querySelector(".field-grid-compact")).not.toBeNull();
     expect(
       screen.getByDisplayValue("仅限xxx使用,它用或复印无效"),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("水印字号")).toHaveValue(28);
+    expect(screen.getByLabelText("PDF 长边字号比例")).toHaveValue(0.028);
+    expect(screen.getByLabelText("PDF 水印透明度")).toHaveValue(50 / 255);
+    expect(screen.getByLabelText("PDF 水印旋转角度")).toHaveValue((-1 * 180) / Math.PI);
+    expect(screen.getByLabelText("PDF 水印条间距")).toHaveValue(2);
+    expect(screen.getByLabelText("PDF 水印行间距")).toHaveValue(3);
     expect(screen.getByRole("button", { name: "开始批量生成水印 PDF" })).toBeDisabled();
   });
 });

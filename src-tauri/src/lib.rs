@@ -15,7 +15,11 @@ pub fn run() {
             commands::extract_embedded_images,
             commands::add_text_watermark_to_images,
             commands::list_input_directory_images,
-            commands::generate_input_directory_image_preview
+            commands::generate_input_directory_image_preview,
+            commands::list_input_directory_videos,
+            commands::generate_input_directory_video_preview,
+            commands::add_slanted_watermark_to_videos,
+            commands::video_recut_series
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

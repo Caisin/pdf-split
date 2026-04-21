@@ -4,8 +4,10 @@ import { useState } from "react";
 import "./App.css";
 import { TAB_ITEMS, type ToolTab } from "./components/toolTabs";
 import { BatchImageWatermarkTool } from "./components/tools/BatchImageWatermarkTool";
+import { BatchVideoWatermarkTool } from "./components/tools/BatchVideoWatermarkTool";
 import { ExtractImagesTool } from "./components/tools/ExtractImagesTool";
 import { PdfWatermarkTool } from "./components/tools/PdfWatermarkTool";
+import { SeriesRecutTool } from "./components/tools/SeriesRecutTool";
 import { SplitPdfTool } from "./components/tools/SplitPdfTool";
 
 function App() {
@@ -42,6 +44,14 @@ function App() {
 
           <Tabs.Content className="tab-panel" value="imageWatermark">
             <BatchImageWatermarkTool />
+          </Tabs.Content>
+
+          <Tabs.Content className="tab-panel" value="videoWatermark">
+            <BatchVideoWatermarkTool />
+          </Tabs.Content>
+
+          <Tabs.Content className="tab-panel" value="seriesRecut">
+            <SeriesRecutTool />
           </Tabs.Content>
         </Tabs.Root>
       </section>

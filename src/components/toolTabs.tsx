@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 
-export type ToolTab = "split" | "extract" | "watermark" | "imageWatermark";
+export type ToolTab =
+  | "split"
+  | "extract"
+  | "watermark"
+  | "imageWatermark"
+  | "videoWatermark"
+  | "seriesRecut";
 
 type TabItem = {
   value: ToolTab;
@@ -47,6 +53,28 @@ export const TAB_ITEMS: TabItem[] = [
         <rect x="4.5" y="5" width="15" height="14" rx="3" />
         <path d="M7 16l10-8" />
         <path d="M8.5 18.5l7-12" />
+      </svg>
+    ),
+  },
+  {
+    value: "videoWatermark",
+    label: "批量视频水印",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5" width="15" height="14" rx="3" />
+        <path d="M10 9.5l5 2.5-5 2.5z" />
+        <path d="M7 18l10-12" />
+      </svg>
+    ),
+  },
+  {
+    value: "seriesRecut",
+    label: "剧集切分",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5" width="15" height="14" rx="3" />
+        <path d="M9 8.5h6M9 12h6M9 15.5h4" />
+        <path d="M14 18l4-4" />
       </svg>
     ),
   },

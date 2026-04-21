@@ -1,8 +1,15 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
+use std::process::Command;
+use std::sync::mpsc;
+use std::time::Duration;
 
-use kx_image::{BatchImageWatermarkProgress, ImageFormat, Imgs, SlantedWatermarkOptions};
+use kx_image::{
+    BatchImageWatermarkProgress, BatchVideoWatermarkProgress, ImageFormat, Imgs,
+    SlantedWatermarkOptions,
+};
+use kx_cmds::{Cmds, traits::video::{CmdVideo, SeriesRecutReq}};
 use kx_pdf::{PdfTextWatermarkOptions, Pdfs};
 use tauri::{Emitter, EventTarget, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, FilePath};
@@ -10,12 +17,18 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 use crate::models::{
     BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchImageWatermarkProgressPayload,
     BatchImageWatermarkResult, BatchPdfTextWatermarkInput, BatchPdfWatermarkProgressPayload,
-    BatchPdfWatermarkResult, ExtractImagesResult, InputDirectoryImageListResult,
-    PdfTextWatermarkInput, PreviewImageBytesResult, SplitPdfResult, WatermarkPdfResult,
+    BatchPdfWatermarkResult, BatchVideoWatermarkInput, BatchVideoWatermarkProgressPayload,
+    BatchVideoWatermarkResult, ExtractImagesResult, InputDirectoryImageListResult,
+    InputDirectoryVideoListResult, PdfTextWatermarkInput, PreviewImageBytesResult,
+    SeriesRecutInput, SeriesRecutProgressPayload, SeriesRecutResult, SplitPdfResult,
+    WatermarkPdfResult,
 };
 
 const BATCH_IMAGE_WATERMARK_PROGRESS_EVENT: &str = "batch-image-watermark-progress";
 const BATCH_PDF_WATERMARK_PROGRESS_EVENT: &str = "batch-pdf-watermark-progress";
+const BATCH_VIDEO_WATERMARK_PROGRESS_EVENT: &str = "batch-video-watermark-progress";
+const SERIES_RECUT_PROGRESS_EVENT: &str = "series-recut-progress";
+const SUPPORTED_VIDEO_EXTENSIONS: &[&str] = &["mp4", "mov", "m4v", "mkv", "avi", "webm"];
 #[tauri::command]
 pub fn select_pdf_file(window: WebviewWindow) -> Result<Option<String>, String> {
     let file = window
@@ -69,11 +82,27 @@ pub fn add_text_watermark(payload: PdfTextWatermarkInput) -> Result<WatermarkPdf
     let input_path = require_value("PDF 文件", payload.input_path)?;
     let output_dir = require_value("输出目录", payload.output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_font_size = require_positive_number("水印字号", payload.watermark_font_size)?;
-    let options = PdfTextWatermarkOptions {
-        watermark_text: &watermark_text,
-        font_size: watermark_font_size,
-    };
+    let watermark_long_edge_font_ratio = require_positive_number(
+        "长边字号比例",
+        payload.watermark_long_edge_font_ratio,
+    )?;
+    let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
+    let watermark_rotation_degrees =
+        require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
+    let watermark_stripe_gap_chars = require_non_negative_number(
+        "条间距",
+        payload.watermark_stripe_gap_chars,
+    )?;
+    let watermark_row_gap_lines = require_non_negative_number(
+        "行间距",
+        payload.watermark_row_gap_lines,
+    )?;
+    let options = PdfTextWatermarkOptions::new(&watermark_text)
+        .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
+        .with_opacity(watermark_opacity)
+        .with_rotation_degrees(watermark_rotation_degrees)
+        .with_stripe_gap_chars(watermark_stripe_gap_chars)
+        .with_row_gap_lines(watermark_row_gap_lines);
 
     let output_pdf_path = Pdfs::add_text_watermark(&input_path, Path::new(&output_dir), &options)
         .map_err(|err| err.to_string())?;
@@ -171,6 +200,82 @@ pub async fn generate_input_directory_image_preview(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+pub fn list_input_directory_videos(
+    input_dir: String,
+) -> Result<InputDirectoryVideoListResult, String> {
+    Ok(InputDirectoryVideoListResult {
+        files: list_previewable_videos(&input_dir)?,
+    })
+}
+
+#[tauri::command]
+pub async fn generate_input_directory_video_preview(
+    payload: BatchImageWatermarkPreviewInput,
+) -> Result<PreviewImageBytesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(PreviewImageBytesResult {
+            bytes: generate_video_preview_image_bytes(payload)?,
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn add_slanted_watermark_to_videos(
+    window: WebviewWindow,
+    payload: BatchVideoWatermarkInput,
+) -> Result<BatchVideoWatermarkResult, String> {
+    let window_label = window.label().to_string();
+    let app_handle = window.app_handle().clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_batch_video_watermark(payload, |progress| {
+            let _ = app_handle.emit_to(
+                EventTarget::webview_window(window_label.clone()),
+                BATCH_VIDEO_WATERMARK_PROGRESS_EVENT,
+                BatchVideoWatermarkProgressPayload {
+                    scanned_file_count: progress.scanned_file_count,
+                    processed_file_count: progress.processed_file_count,
+                    success_count: progress.success_count,
+                    generated_overlay_count: progress.generated_overlay_count,
+                    reused_overlay_count: progress.reused_overlay_count,
+                    current_file: progress.current_file,
+                },
+            );
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn video_recut_series(
+    window: WebviewWindow,
+    payload: SeriesRecutInput,
+) -> Result<SeriesRecutResult, String> {
+    let window_label = window.label().to_string();
+    let app_handle = window.app_handle().clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        run_series_recut(payload, |progress| {
+            let _ = app_handle.emit_to(
+                EventTarget::webview_window(window_label.clone()),
+                SERIES_RECUT_PROGRESS_EVENT,
+                SeriesRecutProgressPayload {
+                    total_count: progress.total_count,
+                    processed_count: progress.processed_count,
+                    current_stage: progress.current_stage,
+                    current_file: progress.current_file,
+                },
+            );
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn run_batch_image_watermark<F>(
     payload: BatchImageWatermarkInput,
     mut on_progress: F,
@@ -248,11 +353,27 @@ where
     let output_dir = require_value("输出目录", payload.output_dir)?;
     ensure_distinct_directories(&input_dir, &output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_font_size = require_positive_number("水印字号", payload.watermark_font_size)?;
-    let options = PdfTextWatermarkOptions {
-        watermark_text: &watermark_text,
-        font_size: watermark_font_size,
-    };
+    let watermark_long_edge_font_ratio = require_positive_number(
+        "长边字号比例",
+        payload.watermark_long_edge_font_ratio,
+    )?;
+    let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
+    let watermark_rotation_degrees =
+        require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
+    let watermark_stripe_gap_chars = require_non_negative_number(
+        "条间距",
+        payload.watermark_stripe_gap_chars,
+    )?;
+    let watermark_row_gap_lines = require_non_negative_number(
+        "行间距",
+        payload.watermark_row_gap_lines,
+    )?;
+    let options = PdfTextWatermarkOptions::new(&watermark_text)
+        .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
+        .with_opacity(watermark_opacity)
+        .with_rotation_degrees(watermark_rotation_degrees)
+        .with_stripe_gap_chars(watermark_stripe_gap_chars)
+        .with_row_gap_lines(watermark_row_gap_lines);
 
     let input_root = canonicalize_existing_directory("输入目录", &input_dir)?;
     let output_root = ensure_batch_output_directory(&input_root, &output_dir)?;
@@ -307,6 +428,141 @@ where
     Ok(result)
 }
 
+fn run_batch_video_watermark<F>(
+    payload: BatchVideoWatermarkInput,
+    mut on_progress: F,
+) -> Result<BatchVideoWatermarkResult, String>
+where
+    F: FnMut(BatchVideoWatermarkProgress),
+{
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let output_dir = require_value("输出目录", payload.output_dir)?;
+    ensure_distinct_directories(&input_dir, &output_dir)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let options = build_slanted_watermark_options(
+        &watermark_text,
+        payload.watermark_line_count,
+        payload.watermark_full_screen,
+        payload.watermark_opacity,
+        payload.watermark_stripe_gap_chars,
+        payload.watermark_row_gap_lines,
+    )?;
+
+    let upstream = Imgs::overlay_slanted_watermark_onto_videos_with_progress(
+        Path::new(&input_dir),
+        Path::new(&output_dir),
+        &options,
+        |progress| on_progress(progress),
+    )
+    .map_err(|err| err.to_string())?;
+
+    let output_dir = absolutize_path(Path::new(&output_dir))?
+        .to_string_lossy()
+        .into_owned();
+
+    Ok(BatchVideoWatermarkResult {
+        scanned_file_count: upstream.scanned_file_count,
+        success_count: upstream.success_count,
+        generated_overlay_count: upstream.generated_overlay_count,
+        reused_overlay_count: upstream.reused_overlay_count,
+        output_dir,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct SeriesRecutProgressState {
+    total_count: usize,
+    processed_count: usize,
+    current_stage: String,
+    current_file: Option<String>,
+}
+
+fn run_series_recut<F>(payload: SeriesRecutInput, mut on_progress: F) -> Result<SeriesRecutResult, String>
+where
+    F: FnMut(SeriesRecutProgressState),
+{
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let output_dir = require_value("输出目录", payload.output_dir)?;
+    ensure_distinct_directories(&input_dir, &output_dir)?;
+    let keep_count = payload.keep_count;
+    let total_count = payload.total_count;
+    if total_count < keep_count {
+        return Err("目标总集数不能小于前面保留集数".to_string());
+    }
+
+    let input_root = canonicalize_existing_directory("输入目录", &input_dir)?;
+    let output_root = absolutize_path(Path::new(&output_dir))?;
+    on_progress(SeriesRecutProgressState {
+        total_count,
+        processed_count: 0,
+        current_stage: "扫描输入剧集".to_string(),
+        current_file: None,
+    });
+    let _episodes = collect_series_episode_files_for_progress(input_root.as_path())?;
+
+    on_progress(SeriesRecutProgressState {
+        total_count,
+        processed_count: 0,
+        current_stage: "准备切分任务".to_string(),
+        current_file: None,
+    });
+
+    let input_dir_for_worker = input_dir.clone();
+    let output_dir_for_worker = output_dir.clone();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let req = SeriesRecutReq::new(
+            &input_dir_for_worker,
+            &output_dir_for_worker,
+            keep_count,
+            total_count,
+        );
+        let result = Cmds::video_recut_series(&req).map_err(|err| err.to_string());
+        let _ = tx.send(result);
+    });
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(300)) {
+            Ok(result) => {
+                let output_files = result?;
+                let output_dir = output_root.to_string_lossy().into_owned();
+                on_progress(SeriesRecutProgressState {
+                    total_count,
+                    processed_count: output_files.len().min(total_count),
+                    current_stage: "完成".to_string(),
+                    current_file: output_files.last().cloned(),
+                });
+                return Ok(SeriesRecutResult {
+                    generated_file_count: output_files.len(),
+                    output_dir,
+                    output_files,
+                });
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let generated_count =
+                    count_generated_series_outputs(output_root.as_path()).unwrap_or_default();
+                let current_file =
+                    latest_generated_series_output(output_root.as_path()).unwrap_or_default();
+                on_progress(SeriesRecutProgressState {
+                    total_count,
+                    processed_count: generated_count.min(total_count),
+                    current_stage: "执行剧集切分".to_string(),
+                    current_file: current_file.or_else(|| {
+                        if generated_count > 0 {
+                            Some(format!("{generated_count:02}.mp4"))
+                        } else {
+                            None
+                        }
+                    }),
+                });
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("剧集切分任务意外中断".to_string());
+            }
+        }
+    }
+}
+
 fn require_value(label: &str, value: String) -> Result<String, String> {
     let trimmed = value.trim().to_string();
     if trimmed.is_empty() {
@@ -343,6 +599,14 @@ fn require_zero_to_one_number(label: &str, value: f32) -> Result<f32, String> {
 fn require_non_negative_number(label: &str, value: f32) -> Result<f32, String> {
     if !value.is_finite() || value < 0.0 {
         return Err(format!("{label}必须大于等于 0"));
+    }
+
+    Ok(value)
+}
+
+fn require_finite_number(label: &str, value: f32) -> Result<f32, String> {
+    if !value.is_finite() {
+        return Err(format!("{label}必须是有效数字"));
     }
 
     Ok(value)
@@ -436,9 +700,45 @@ fn list_previewable_images(input_dir: &str) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+fn list_previewable_videos(input_dir: &str) -> Result<Vec<String>, String> {
+    let input_dir = require_value("输入目录", input_dir.to_string())?;
+    let root = PathBuf::from(&input_dir);
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    let mut files = Vec::new();
+    collect_previewable_videos(&root, &root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
 fn collect_pdf_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     collect_pdf_files_recursive(root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_series_episode_files_for_progress(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(root).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        if !entry.file_type().map_err(|err| err.to_string())?.is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if stem.parse::<usize>().is_ok() {
+            files.push(path);
+        }
+    }
+    if files.is_empty() {
+        return Err("输入目录中没有可处理的视频文件".to_string());
+    }
     files.sort();
     Ok(files)
 }
@@ -470,6 +770,55 @@ fn collect_image_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     collect_image_files_recursive(root, &mut files)?;
     files.sort();
     Ok(files)
+}
+
+fn count_generated_series_outputs(output_dir: &Path) -> Result<usize, String> {
+    if !output_dir.exists() {
+        return Ok(0);
+    }
+
+    let mut count = 0;
+    for entry in fs::read_dir(output_dir).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let path = entry.path();
+        if !entry.file_type().map_err(|err| err.to_string())?.is_file() {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if stem.parse::<usize>().is_ok() {
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
+fn latest_generated_series_output(output_dir: &Path) -> Result<Option<String>, String> {
+    if !output_dir.exists() {
+        return Ok(None);
+    }
+
+    let mut files = Vec::new();
+    for entry in fs::read_dir(output_dir).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let path = entry.path();
+        if !entry.file_type().map_err(|err| err.to_string())?.is_file() {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if stem.parse::<usize>().is_ok() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files
+        .last()
+        .and_then(|path| path.file_name())
+        .map(|value| value.to_string_lossy().into_owned()))
 }
 
 fn collect_image_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
@@ -517,6 +866,34 @@ fn collect_previewable_images(
     Ok(())
 }
 
+fn collect_previewable_videos(
+    root: &Path,
+    current_dir: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(current_dir).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_previewable_videos(root, &path, files)?;
+            continue;
+        }
+
+        if !is_preview_video_path(&path) {
+            continue;
+        }
+
+        let relative_path = path
+            .strip_prefix(root)
+            .map_err(|err| err.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        files.push(relative_path);
+    }
+
+    Ok(())
+}
+
 fn generate_preview_image_bytes(
     payload: BatchImageWatermarkPreviewInput,
 ) -> Result<Vec<u8>, String> {
@@ -545,6 +922,36 @@ fn generate_preview_image_bytes(
     Ok(bytes)
 }
 
+fn generate_video_preview_image_bytes(
+    payload: BatchImageWatermarkPreviewInput,
+) -> Result<Vec<u8>, String> {
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let root = PathBuf::from(&input_dir)
+        .canonicalize()
+        .map_err(|_| "输入目录不存在或不是有效目录".to_string())?;
+    let source_path = resolve_preview_video_path(root.as_path(), &payload.relative_path)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let options = build_slanted_watermark_options(
+        &watermark_text,
+        payload.watermark_line_count,
+        payload.watermark_full_screen,
+        payload.watermark_opacity,
+        payload.watermark_stripe_gap_chars,
+        payload.watermark_row_gap_lines,
+    )?;
+
+    let temp_frame_dir = make_temp_preview_dir("pdf-split-video-preview");
+    let frame_path = temp_frame_dir.join("frame.png");
+    extract_video_first_frame(source_path.as_path(), frame_path.as_path())?;
+    let rendered = render_watermarked_image(frame_path.as_path(), &options)?;
+    let mut bytes = Vec::new();
+    rendered
+        .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+        .map_err(|err| err.to_string())?;
+    let _ = fs::remove_dir_all(&temp_frame_dir);
+    Ok(bytes)
+}
+
 fn resolve_preview_image_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     if !root.is_dir() {
         return Err("输入目录不存在或不是有效目录".to_string());
@@ -570,6 +977,31 @@ fn resolve_preview_image_path(root: &Path, relative_path: &str) -> Result<PathBu
     Ok(preview_path)
 }
 
+fn resolve_preview_video_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    let relative_path = require_value("预览视频", relative_path.to_string())?;
+    let candidate = Path::new(&relative_path);
+    if candidate.is_absolute() {
+        return Err("预览视频路径不合法".to_string());
+    }
+
+    let preview_path = root.join(candidate);
+    let preview_path = preview_path
+        .canonicalize()
+        .map_err(|_| "预览视频不存在".to_string())?;
+    if !preview_path.starts_with(&root)
+        || !preview_path.is_file()
+        || !is_preview_video_path(&preview_path)
+    {
+        return Err("预览视频路径不合法".to_string());
+    }
+
+    Ok(preview_path)
+}
+
 fn is_preview_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -580,6 +1012,56 @@ fn is_preview_image_path(path: &Path) -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+fn is_preview_video_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| {
+            SUPPORTED_VIDEO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+        })
+        .unwrap_or(false)
+}
+
+fn make_temp_preview_dir(prefix: &str) -> PathBuf {
+    let unique_suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time should be valid")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("{prefix}-{unique_suffix}"));
+    let _ = fs::create_dir_all(&path);
+    path
+}
+
+fn extract_video_first_frame(video_path: &Path, output_path: &Path) -> Result<(), String> {
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            video_path
+                .to_str()
+                .ok_or_else(|| "预览视频路径不合法".to_string())?,
+            "-frames:v",
+            "1",
+            output_path
+                .to_str()
+                .ok_or_else(|| "预览输出路径不合法".to_string())?,
+        ])
+        .output()
+        .map_err(|err| err.to_string())?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "视频首帧提取失败：{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(())
 }
 
 fn build_slanted_watermark_options<'a>(
@@ -698,7 +1180,11 @@ mod tests {
             input_path: "a.pdf".into(),
             output_dir: "/tmp".into(),
             watermark_text: "".into(),
-            watermark_font_size: 28.0,
+            watermark_long_edge_font_ratio: 0.028,
+            watermark_opacity: 50.0 / 255.0,
+            watermark_rotation_degrees: -57.29578,
+            watermark_stripe_gap_chars: 2.0,
+            watermark_row_gap_lines: 3.0,
         })
         .expect_err("empty watermark text should fail");
 
@@ -706,16 +1192,20 @@ mod tests {
     }
 
     #[test]
-    fn watermark_command_rejects_non_positive_font_size() {
+    fn watermark_command_rejects_non_positive_long_edge_font_ratio() {
         let err = add_text_watermark(PdfTextWatermarkInput {
             input_path: "a.pdf".into(),
             output_dir: "/tmp".into(),
             watermark_text: "wm".into(),
-            watermark_font_size: 0.0,
+            watermark_long_edge_font_ratio: 0.0,
+            watermark_opacity: 50.0 / 255.0,
+            watermark_rotation_degrees: -57.29578,
+            watermark_stripe_gap_chars: 2.0,
+            watermark_row_gap_lines: 3.0,
         })
-        .expect_err("non-positive font size should fail");
+        .expect_err("non-positive long edge font ratio should fail");
 
-        assert!(err.contains("水印字号"));
+        assert!(err.contains("长边字号比例"));
     }
 
     #[test]
@@ -724,7 +1214,11 @@ mod tests {
             input_dir: "/tmp/pdfs".into(),
             output_dir: "/tmp/pdfs/".into(),
             watermark_text: "wm".into(),
-            watermark_font_size: 28.0,
+            watermark_long_edge_font_ratio: 0.028,
+            watermark_opacity: 50.0 / 255.0,
+            watermark_rotation_degrees: -57.29578,
+            watermark_stripe_gap_chars: 2.0,
+            watermark_row_gap_lines: 3.0,
         }, |_| {})
         .expect_err("same directories should fail");
 
@@ -744,7 +1238,11 @@ mod tests {
             input_dir: input_dir.to_string_lossy().into_owned(),
             output_dir: output_dir.to_string_lossy().into_owned(),
             watermark_text: "wm".into(),
-            watermark_font_size: 28.0,
+            watermark_long_edge_font_ratio: 0.028,
+            watermark_opacity: 50.0 / 255.0,
+            watermark_rotation_degrees: -57.29578,
+            watermark_stripe_gap_chars: 2.0,
+            watermark_row_gap_lines: 3.0,
         }, |_| {})
         .expect("batch pdf watermark should succeed");
 
@@ -770,7 +1268,11 @@ mod tests {
                 input_dir: input_dir.to_string_lossy().into_owned(),
                 output_dir: output_dir.to_string_lossy().into_owned(),
                 watermark_text: "wm".into(),
-                watermark_font_size: 28.0,
+                watermark_long_edge_font_ratio: 0.028,
+                watermark_opacity: 50.0 / 255.0,
+                watermark_rotation_degrees: -57.29578,
+                watermark_stripe_gap_chars: 2.0,
+                watermark_row_gap_lines: 3.0,
             },
             |progress| progress_events.push(progress),
         )

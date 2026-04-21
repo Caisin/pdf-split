@@ -5,9 +5,9 @@ import { listen } from "@tauri-apps/api/event";
 import { PickerField } from "../common/PickerField";
 import { pathsLookSame, pickOutputDir } from "../common/dialog";
 import type {
-  BatchImageWatermarkProgress,
-  BatchImageWatermarkResult,
-  InputDirectoryImageListResult,
+  BatchVideoWatermarkProgress,
+  BatchVideoWatermarkResult,
+  InputDirectoryVideoListResult,
   MessageTone,
   PreviewImageBytesResult,
 } from "../tool-types";
@@ -15,7 +15,7 @@ import type {
 const DEFAULT_WATERMARK_TEXT = "仅限xxx使用,它用或复印无效";
 const PREVIEW_DEBOUNCE_MS = 400;
 
-export function BatchImageWatermarkTool() {
+export function BatchVideoWatermarkTool() {
   const [inputDir, setInputDir] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [watermarkText, setWatermarkText] = useState(DEFAULT_WATERMARK_TEXT);
@@ -24,15 +24,14 @@ export function BatchImageWatermarkTool() {
   const [opacity, setOpacity] = useState(0.5);
   const [stripeGapChars, setStripeGapChars] = useState(2);
   const [rowGapLines, setRowGapLines] = useState(3);
-  const [previewImageFiles, setPreviewImageFiles] = useState<string[]>([]);
-  const [selectedPreviewImage, setSelectedPreviewImage] = useState("");
+  const [previewVideoPath, setPreviewVideoPath] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState("");
-  const [previewImageMessage, setPreviewImageMessage] = useState("选择输入目录后，将自动生成真实预览。");
+  const [previewImageMessage, setPreviewImageMessage] = useState("选择输入目录后，将自动提取第一个视频首帧生成真实预览。");
   const [previewBusy, setPreviewBusy] = useState(false);
   const previewObjectUrlRef = useRef("");
   const previewRequestIdRef = useRef(0);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<BatchImageWatermarkProgress | null>(null);
+  const [progress, setProgress] = useState<BatchVideoWatermarkProgress | null>(null);
   const [message, setMessage] = useState("");
   const [tone, setTone] = useState<MessageTone>("idle");
 
@@ -53,7 +52,7 @@ export function BatchImageWatermarkTool() {
     rowGapLines >= 0;
 
   useEffect(() => {
-    if (inputDir === "" || selectedPreviewImage === "") {
+    if (inputDir === "" || previewVideoPath === "") {
       setPreviewBusy(false);
       return;
     }
@@ -66,15 +65,15 @@ export function BatchImageWatermarkTool() {
 
     setPreviewBusy(true);
     if (previewImageUrl === "") {
-      setPreviewImageMessage("正在生成真实预览...");
+      setPreviewImageMessage("正在生成视频首帧真实预览...");
     }
 
     async function loadPreviewImage() {
       try {
-        const result = await invoke<PreviewImageBytesResult>("generate_input_directory_image_preview", {
+        const result = await invoke<PreviewImageBytesResult>("generate_input_directory_video_preview", {
           payload: {
             inputDir,
-            relativePath: selectedPreviewImage,
+            relativePath: previewVideoPath,
             watermarkText,
             watermarkLineCount: lineCount,
             watermarkFullScreen: fullScreen,
@@ -88,7 +87,7 @@ export function BatchImageWatermarkTool() {
         }
 
         const nextObjectUrl = URL.createObjectURL(
-          new Blob([new Uint8Array(result.bytes)], { type: getImageMimeType(selectedPreviewImage) }),
+          new Blob([new Uint8Array(result.bytes)], { type: "image/png" }),
         );
         if (previewObjectUrlRef.current !== "") {
           URL.revokeObjectURL(previewObjectUrlRef.current);
@@ -96,14 +95,14 @@ export function BatchImageWatermarkTool() {
         previewObjectUrlRef.current = nextObjectUrl;
         setPreviewImageUrl(nextObjectUrl);
         setPreviewBusy(false);
-        setPreviewImageMessage(`真实预览：${selectedPreviewImage}`);
+        setPreviewImageMessage(`真实预览：${previewVideoPath}`);
       } catch (_error) {
         if (!active || previewRequestIdRef.current !== requestId) {
           return;
         }
 
         setPreviewBusy(false);
-        setPreviewImageMessage("真实预览生成失败，请检查参数或更换图片后重试。");
+        setPreviewImageMessage("视频首帧预览生成失败，请检查参数或更换目录后重试。");
       }
     }
 
@@ -111,16 +110,7 @@ export function BatchImageWatermarkTool() {
       active = false;
       window.clearTimeout(previewTimer);
     };
-  }, [
-    fullScreen,
-    inputDir,
-    lineCount,
-    opacity,
-    rowGapLines,
-    selectedPreviewImage,
-    stripeGapChars,
-    watermarkText,
-  ]);
+  }, [fullScreen, inputDir, lineCount, opacity, previewVideoPath, rowGapLines, stripeGapChars, watermarkText]);
 
   async function handlePickInputDir() {
     const selected = await pickOutputDir();
@@ -131,22 +121,21 @@ export function BatchImageWatermarkTool() {
         previewObjectUrlRef.current = "";
       }
       setPreviewImageUrl("");
-      setSelectedPreviewImage("");
+      setPreviewVideoPath("");
       try {
-        const result = await invoke<InputDirectoryImageListResult>("list_input_directory_images", {
+        const result = await invoke<InputDirectoryVideoListResult>("list_input_directory_videos", {
           inputDir: selected,
         });
-        setPreviewImageFiles(result.files);
-        setSelectedPreviewImage(result.files[0] ?? "");
-        setPreviewBusy(result.files.length > 0);
+        const firstVideo = result.files[0] ?? "";
+        setPreviewVideoPath(firstVideo);
+        setPreviewBusy(firstVideo !== "");
         setPreviewImageMessage(
-          result.files.length > 0
-            ? "正在生成真实预览..."
-            : "目录内未找到可预览图片，无法生成真实预览。",
+          firstVideo !== ""
+            ? "正在生成视频首帧真实预览..."
+            : "目录内未找到可预览视频，无法生成真实预览。",
         );
       } catch (_error) {
-        setPreviewImageFiles([]);
-        setPreviewImageMessage("预览图片列表加载失败，无法生成真实预览。");
+        setPreviewImageMessage("预览视频列表加载失败，无法生成真实预览。");
       }
       setMessage("");
       setTone("idle");
@@ -184,16 +173,16 @@ export function BatchImageWatermarkTool() {
     let unlistenProgress: (() => void) | undefined;
 
     try {
-      unlistenProgress = await listen<BatchImageWatermarkProgress>(
-        "batch-image-watermark-progress",
+      unlistenProgress = await listen<BatchVideoWatermarkProgress>(
+        "batch-video-watermark-progress",
         ({ payload }) => {
           setProgress(payload);
-          setMessage(formatBatchImageProgress(payload));
+          setMessage(formatBatchVideoProgress(payload));
         },
       );
       await yieldToBrowser();
 
-      const result = await invoke<BatchImageWatermarkResult>("add_text_watermark_to_images", {
+      const result = await invoke<BatchVideoWatermarkResult>("add_slanted_watermark_to_videos", {
         payload: {
           inputDir,
           outputDir,
@@ -208,7 +197,7 @@ export function BatchImageWatermarkTool() {
       setProgress(null);
       setTone("success");
       setMessage(
-        `完成：扫描 ${result.scannedFileCount} 张，成功 ${result.successCount} 张，失败 ${result.failureCount} 张，输出目录 ${result.outputDir}`,
+        `完成：扫描 ${result.scannedFileCount} 个视频，成功 ${result.successCount} 个，新增水印图 ${result.generatedOverlayCount} 张，复用水印图 ${result.reusedOverlayCount} 张，输出目录 ${result.outputDir}`,
       );
     } catch (error) {
       setProgress(null);
@@ -223,17 +212,17 @@ export function BatchImageWatermarkTool() {
   return (
     <form className="tool-card tool-card-dense" onSubmit={handleSubmit}>
       <div className="card-head">
-        <p className="card-kicker">Tool 04</p>
-        <h2>批量图片文字水印</h2>
-        <p>递归处理输入目录下的图片，保留目录结构输出，不覆盖原文件。</p>
+        <p className="card-kicker">Tool 05</p>
+        <h2>批量视频文字水印</h2>
+        <p>递归处理输入目录下的视频，复用 slanted watermark 参数并保持目录结构输出。</p>
       </div>
 
       <div className="picker-grid">
         <PickerField
           label="输入目录"
-          placeholder="请选择需要批量处理的图片目录"
+          placeholder="请选择需要批量处理的视频目录"
           value={inputDir}
-          buttonLabel="选择输入目录"
+          buttonLabel="选择视频输入目录"
           kind="folder"
           onPick={handlePickInputDir}
         />
@@ -242,7 +231,7 @@ export function BatchImageWatermarkTool() {
           label="输出目录"
           placeholder="请选择输出目录"
           value={outputDir}
-          buttonLabel="选择输出目录"
+          buttonLabel="选择视频输出目录"
           kind="folder"
           onPick={handlePickOutputDir}
         />
@@ -264,7 +253,7 @@ export function BatchImageWatermarkTool() {
           <span>水印行数</span>
           <div className="input-shell">
             <input
-              aria-label="水印行数"
+              aria-label="视频水印行数"
               type="number"
               min={1}
               step={1}
@@ -281,7 +270,7 @@ export function BatchImageWatermarkTool() {
           <span>透明度 (0-1)</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印透明度"
+              aria-label="视频水印透明度"
               type="number"
               min={0}
               max={1}
@@ -299,7 +288,7 @@ export function BatchImageWatermarkTool() {
           <span>条间距（字符倍数）</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印条间距"
+              aria-label="视频水印条间距"
               type="number"
               min={0}
               step={0.1}
@@ -316,7 +305,7 @@ export function BatchImageWatermarkTool() {
           <span>行间距（行高倍数）</span>
           <div className="input-shell">
             <input
-              aria-label="图片水印行间距"
+              aria-label="视频水印行间距"
               type="number"
               min={0}
               step={0.1}
@@ -334,7 +323,7 @@ export function BatchImageWatermarkTool() {
         <span>铺满画面</span>
         <div className="input-shell">
           <input
-            aria-label="铺满画面"
+            aria-label="视频铺满画面"
             checked={fullScreen}
             type="checkbox"
             onChange={(event) => setFullScreen(event.currentTarget.checked)}
@@ -342,40 +331,20 @@ export function BatchImageWatermarkTool() {
         </div>
       </label>
 
-      <p className="status-line idle">直接使用 SlantedWatermarkOptions 参数生成预览与批处理</p>
-
       <section className="preview-panel">
         <div className="preview-panel-head">
           <span>参数预览</span>
           <p>{previewImageMessage}</p>
         </div>
-        {previewImageFiles.length > 0 && (
-          <label className="field">
-            <span>预览图片</span>
-            <div className="input-shell">
-              <select
-                aria-label="预览图片"
-                value={selectedPreviewImage}
-                onChange={(event) => setSelectedPreviewImage(event.currentTarget.value)}
-              >
-                {previewImageFiles.map((file) => (
-                  <option key={file} value={file}>
-                    {file}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </label>
-        )}
         <div
-          aria-label="图片水印参数预览"
+          aria-label="视频水印参数预览"
           className={`watermark-preview ${previewImageUrl !== "" ? "has-image" : ""}`}
           role="img"
         >
           {previewBusy && <div className="watermark-preview-updating">更新中</div>}
           {previewImageUrl !== "" && (
             <img
-              alt={`真实预览图：${selectedPreviewImage}`}
+              alt={`真实预览图：${previewVideoPath}`}
               className="watermark-preview-image"
               src={previewImageUrl}
             />
@@ -395,7 +364,7 @@ export function BatchImageWatermarkTool() {
       {busy && (
         <div className="progress-stack">
           <progress
-            aria-label="图片水印处理进度"
+            aria-label="视频水印处理进度"
             max={Math.max(progress?.scannedFileCount ?? 1, 1)}
             value={progress?.processedFileCount ?? 0}
           />
@@ -404,7 +373,7 @@ export function BatchImageWatermarkTool() {
       )}
 
       <button className="submit-button" type="submit" disabled={!canSubmit || busy}>
-        {busy ? "处理中..." : "开始批量生成图片水印"}
+        {busy ? "处理中..." : "开始批量生成视频水印"}
       </button>
 
       <p className={`status-line ${tone}`}>{message || "等待执行"}</p>
@@ -423,30 +392,9 @@ async function yieldToBrowser() {
   });
 }
 
-function formatBatchImageProgress(progress: BatchImageWatermarkProgress) {
+function formatBatchVideoProgress(progress: BatchVideoWatermarkProgress) {
   const currentFile = progress.currentFile
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
-  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}）${currentFile}`;
-}
-
-function getImageMimeType(filePath: string) {
-  const lowerFilePath = filePath.toLowerCase();
-  if (lowerFilePath.endsWith(".png")) {
-    return "image/png";
-  }
-  if (lowerFilePath.endsWith(".webp")) {
-    return "image/webp";
-  }
-  if (lowerFilePath.endsWith(".gif")) {
-    return "image/gif";
-  }
-  if (lowerFilePath.endsWith(".bmp")) {
-    return "image/bmp";
-  }
-  if (lowerFilePath.endsWith(".tif") || lowerFilePath.endsWith(".tiff")) {
-    return "image/tiff";
-  }
-
-  return "image/jpeg";
+  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，新增水印图 ${progress.generatedOverlayCount}，复用水印图 ${progress.reusedOverlayCount}）${currentFile}`;
 }
