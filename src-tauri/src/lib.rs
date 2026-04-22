@@ -12,6 +12,8 @@ pub fn run() {
             commands::split_pdf_to_images,
             commands::add_text_watermark,
             commands::add_text_watermark_to_pdfs,
+            commands::list_input_directory_pdfs,
+            commands::generate_input_directory_pdf_preview,
             commands::extract_embedded_images,
             commands::add_text_watermark_to_images,
             commands::list_input_directory_images,

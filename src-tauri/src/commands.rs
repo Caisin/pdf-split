@@ -19,12 +19,12 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::models::{
     BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchImageWatermarkProgressPayload,
-    BatchImageWatermarkResult, BatchPdfTextWatermarkInput, BatchPdfWatermarkProgressPayload,
-    BatchPdfWatermarkResult, BatchVideoWatermarkInput, BatchVideoWatermarkProgressPayload,
-    BatchVideoWatermarkResult, ExtractImagesResult, InputDirectoryImageListResult,
-    InputDirectoryVideoListResult, PdfTextWatermarkInput, PreviewImageBytesResult,
-    SeriesRecutInput, SeriesRecutProgressPayload, SeriesRecutResult, SplitPdfResult,
-    WatermarkPdfResult,
+    BatchImageWatermarkResult, BatchPdfTextWatermarkInput, BatchPdfWatermarkPreviewInput,
+    BatchPdfWatermarkProgressPayload, BatchPdfWatermarkResult, BatchVideoWatermarkInput,
+    BatchVideoWatermarkProgressPayload, BatchVideoWatermarkResult, ExtractImagesResult,
+    InputDirectoryImageListResult, InputDirectoryPdfListResult, InputDirectoryVideoListResult,
+    PdfTextWatermarkInput, PreviewImageBytesResult, SeriesRecutInput, SeriesRecutProgressPayload,
+    SeriesRecutResult, SplitPdfResult, WatermarkPdfResult,
 };
 
 const BATCH_IMAGE_WATERMARK_PROGRESS_EVENT: &str = "batch-image-watermark-progress";
@@ -85,21 +85,14 @@ pub fn add_text_watermark(payload: PdfTextWatermarkInput) -> Result<WatermarkPdf
     let input_path = require_value("PDF 文件", payload.input_path)?;
     let output_dir = require_value("输出目录", payload.output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_long_edge_font_ratio =
-        require_positive_number("长边字号比例", payload.watermark_long_edge_font_ratio)?;
-    let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
-    let watermark_rotation_degrees =
-        require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
-    let watermark_stripe_gap_chars =
-        require_non_negative_number("条间距", payload.watermark_stripe_gap_chars)?;
-    let watermark_row_gap_lines =
-        require_non_negative_number("行间距", payload.watermark_row_gap_lines)?;
-    let options = PdfTextWatermarkOptions::new(&watermark_text)
-        .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
-        .with_opacity(watermark_opacity)
-        .with_rotation_degrees(watermark_rotation_degrees)
-        .with_stripe_gap_chars(watermark_stripe_gap_chars)
-        .with_row_gap_lines(watermark_row_gap_lines);
+    let options = build_pdf_text_watermark_options(
+        &watermark_text,
+        payload.watermark_long_edge_font_ratio,
+        payload.watermark_opacity,
+        payload.watermark_rotation_degrees,
+        payload.watermark_stripe_gap_chars,
+        payload.watermark_row_gap_lines,
+    )?;
 
     let output_pdf_path = Pdfs::add_text_watermark(&input_path, Path::new(&output_dir), &options)
         .map_err(|err| err.to_string())?;
@@ -128,6 +121,26 @@ pub async fn add_text_watermark_to_pdfs(
                     current_file: progress.current_file,
                 },
             );
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn list_input_directory_pdfs(input_dir: String) -> Result<InputDirectoryPdfListResult, String> {
+    Ok(InputDirectoryPdfListResult {
+        files: list_previewable_pdfs(&input_dir)?,
+    })
+}
+
+#[tauri::command]
+pub async fn generate_input_directory_pdf_preview(
+    payload: BatchPdfWatermarkPreviewInput,
+) -> Result<PreviewImageBytesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(PreviewImageBytesResult {
+            bytes: generate_pdf_preview_image_bytes(payload)?,
         })
     })
     .await
@@ -354,21 +367,14 @@ where
     let output_dir = require_value("输出目录", payload.output_dir)?;
     ensure_distinct_directories(&input_dir, &output_dir)?;
     let watermark_text = require_value("水印文字", payload.watermark_text)?;
-    let watermark_long_edge_font_ratio =
-        require_positive_number("长边字号比例", payload.watermark_long_edge_font_ratio)?;
-    let watermark_opacity = require_zero_to_one_number("水印透明度", payload.watermark_opacity)?;
-    let watermark_rotation_degrees =
-        require_finite_number("水印角度", payload.watermark_rotation_degrees)?;
-    let watermark_stripe_gap_chars =
-        require_non_negative_number("条间距", payload.watermark_stripe_gap_chars)?;
-    let watermark_row_gap_lines =
-        require_non_negative_number("行间距", payload.watermark_row_gap_lines)?;
-    let options = PdfTextWatermarkOptions::new(&watermark_text)
-        .with_long_edge_font_ratio(watermark_long_edge_font_ratio)
-        .with_opacity(watermark_opacity)
-        .with_rotation_degrees(watermark_rotation_degrees)
-        .with_stripe_gap_chars(watermark_stripe_gap_chars)
-        .with_row_gap_lines(watermark_row_gap_lines);
+    let options = build_pdf_text_watermark_options(
+        &watermark_text,
+        payload.watermark_long_edge_font_ratio,
+        payload.watermark_opacity,
+        payload.watermark_rotation_degrees,
+        payload.watermark_stripe_gap_chars,
+        payload.watermark_row_gap_lines,
+    )?;
 
     let input_root = canonicalize_existing_directory("输入目录", &input_dir)?;
     let output_root = ensure_batch_output_directory(&input_root, &output_dir)?;
@@ -712,6 +718,23 @@ fn list_previewable_videos(input_dir: &str) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+fn list_previewable_pdfs(input_dir: &str) -> Result<Vec<String>, String> {
+    let input_dir = require_value("输入目录", input_dir.to_string())?;
+    let root = PathBuf::from(&input_dir);
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    collect_pdf_files(root.as_path())?
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(root.as_path())
+                .map(|relative_path| relative_path.to_string_lossy().replace('\\', "/"))
+                .map_err(|err| err.to_string())
+        })
+        .collect()
+}
+
 fn collect_pdf_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     collect_pdf_files_recursive(root, &mut files)?;
@@ -953,6 +976,47 @@ fn generate_video_preview_image_bytes(
     Ok(bytes)
 }
 
+fn generate_pdf_preview_image_bytes(
+    payload: BatchPdfWatermarkPreviewInput,
+) -> Result<Vec<u8>, String> {
+    let input_dir = require_value("输入目录", payload.input_dir)?;
+    let root = PathBuf::from(&input_dir)
+        .canonicalize()
+        .map_err(|_| "输入目录不存在或不是有效目录".to_string())?;
+    let source_path = resolve_preview_pdf_path(root.as_path(), &payload.relative_path)?;
+    let watermark_text = require_value("水印文字", payload.watermark_text)?;
+    let options = build_pdf_text_watermark_options(
+        &watermark_text,
+        payload.watermark_long_edge_font_ratio,
+        payload.watermark_opacity,
+        payload.watermark_rotation_degrees,
+        payload.watermark_stripe_gap_chars,
+        payload.watermark_row_gap_lines,
+    )?;
+
+    let temp_preview_dir = make_temp_preview_dir("pdf-split-pdf-preview");
+    let result = (|| {
+        let watermarked_output_dir = temp_preview_dir.join("watermarked");
+        let output_pdf_path = Pdfs::add_text_watermark(
+            source_path.to_string_lossy().as_ref(),
+            watermarked_output_dir.as_path(),
+            &options,
+        )
+        .map_err(|err| err.to_string())?;
+        let rendered_output_dir = temp_preview_dir.join("rendered");
+        let render_result =
+            Pdfs::render_pages_to_images(&output_pdf_path, rendered_output_dir.as_path(), "png")
+                .map_err(|err| err.to_string())?;
+        let first_image_path = render_result
+            .generated_files
+            .first()
+            .ok_or_else(|| "PDF 预览生成失败：未生成预览图片".to_string())?;
+        fs::read(first_image_path).map_err(|err| err.to_string())
+    })();
+    let _ = fs::remove_dir_all(&temp_preview_dir);
+    result
+}
+
 fn resolve_preview_image_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
     if !root.is_dir() {
         return Err("输入目录不存在或不是有效目录".to_string());
@@ -1003,6 +1067,31 @@ fn resolve_preview_video_path(root: &Path, relative_path: &str) -> Result<PathBu
     Ok(preview_path)
 }
 
+fn resolve_preview_pdf_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    if !root.is_dir() {
+        return Err("输入目录不存在或不是有效目录".to_string());
+    }
+
+    let relative_path = require_value("预览 PDF", relative_path.to_string())?;
+    let candidate = Path::new(&relative_path);
+    if candidate.is_absolute() {
+        return Err("预览 PDF 路径不合法".to_string());
+    }
+
+    let preview_path = root.join(candidate);
+    let preview_path = preview_path
+        .canonicalize()
+        .map_err(|_| "预览 PDF 不存在".to_string())?;
+    if !preview_path.starts_with(root)
+        || !preview_path.is_file()
+        || !is_preview_pdf_path(&preview_path)
+    {
+        return Err("预览 PDF 路径不合法".to_string());
+    }
+
+    Ok(preview_path)
+}
+
 fn is_preview_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -1021,6 +1110,13 @@ fn is_preview_video_path(path: &Path) -> bool {
         .map(|extension| {
             SUPPORTED_VIDEO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
         })
+        .unwrap_or(false)
+}
+
+fn is_preview_pdf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.eq_ignore_ascii_case("pdf"))
         .unwrap_or(false)
 }
 
@@ -1082,6 +1178,29 @@ fn build_slanted_watermark_options<'a>(
 
     Ok(SlantedWatermarkOptions::new(watermark_text, line_count)
         .with_full_screen(watermark_full_screen)
+        .with_opacity(opacity)
+        .with_rotation_degrees(rotation_degrees)
+        .with_stripe_gap_chars(stripe_gap_chars)
+        .with_row_gap_lines(row_gap_lines))
+}
+
+fn build_pdf_text_watermark_options<'a>(
+    watermark_text: &'a str,
+    watermark_long_edge_font_ratio: f32,
+    watermark_opacity: f32,
+    watermark_rotation_degrees: f32,
+    watermark_stripe_gap_chars: f32,
+    watermark_row_gap_lines: f32,
+) -> Result<PdfTextWatermarkOptions<'a>, String> {
+    let long_edge_font_ratio =
+        require_positive_number("长边字号比例", watermark_long_edge_font_ratio)?;
+    let opacity = require_zero_to_one_number("水印透明度", watermark_opacity)?;
+    let rotation_degrees = require_finite_number("水印角度", watermark_rotation_degrees)?;
+    let stripe_gap_chars = require_non_negative_number("条间距", watermark_stripe_gap_chars)?;
+    let row_gap_lines = require_non_negative_number("行间距", watermark_row_gap_lines)?;
+
+    Ok(PdfTextWatermarkOptions::new(watermark_text)
+        .with_long_edge_font_ratio(long_edge_font_ratio)
         .with_opacity(opacity)
         .with_rotation_degrees(rotation_degrees)
         .with_stripe_gap_chars(stripe_gap_chars)
@@ -1153,12 +1272,13 @@ fn image_format_from_path(path: &Path) -> Result<ImageFormat, String> {
 mod tests {
     use super::{
         add_text_watermark, build_slanted_watermark_options, extract_embedded_images,
-        generate_preview_image_bytes, list_previewable_images, render_watermarked_image,
-        run_batch_image_watermark, run_batch_pdf_watermark, split_pdf_to_images,
+        generate_pdf_preview_image_bytes, generate_preview_image_bytes, list_previewable_images,
+        list_previewable_pdfs, render_watermarked_image, run_batch_image_watermark,
+        run_batch_pdf_watermark, split_pdf_to_images,
     };
     use crate::models::{
         BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchPdfTextWatermarkInput,
-        PdfTextWatermarkInput,
+        BatchPdfWatermarkPreviewInput, PdfTextWatermarkInput,
     };
     use std::{
         fs,
@@ -1374,9 +1494,8 @@ mod tests {
 
         let low_rotation = build_slanted_watermark_options("wm", 3, true, 0.2, -20.0, 2.0, 3.0)
             .expect("low rotation options should build");
-        let high_rotation =
-            build_slanted_watermark_options("wm", 3, true, 0.2, -60.0, 2.0, 3.0)
-                .expect("high rotation options should build");
+        let high_rotation = build_slanted_watermark_options("wm", 3, true, 0.2, -60.0, 2.0, 3.0)
+            .expect("high rotation options should build");
 
         let low = render_watermarked_image(&source_path, &low_rotation)
             .expect("low rotation render should succeed")
@@ -1407,6 +1526,24 @@ mod tests {
     }
 
     #[test]
+    fn list_previewable_pdfs_returns_sorted_relative_pdf_paths() {
+        let temp_dir = TestDir::new();
+        let nested_dir = temp_dir.path().join("nested");
+        fs::create_dir_all(&nested_dir).expect("nested dir should be created");
+        create_test_pdf(&temp_dir.path().join("cover.pdf")).expect("pdf should be written");
+        create_test_pdf(&nested_dir.join("demo.pdf")).expect("nested pdf should be written");
+        fs::write(temp_dir.path().join("ignore.txt"), b"noop").expect("txt should be written");
+
+        let files =
+            list_previewable_pdfs(temp_dir.path().to_string_lossy().as_ref()).expect("pdfs list");
+
+        assert_eq!(
+            files,
+            vec!["cover.pdf".to_string(), "nested/demo.pdf".to_string()]
+        );
+    }
+
+    #[test]
     fn generate_preview_image_bytes_rejects_path_escape() {
         let temp_dir = TestDir::new();
         let nested_dir = temp_dir.path().join("nested");
@@ -1427,6 +1564,28 @@ mod tests {
         .expect_err("path escape should fail");
 
         assert!(err.contains("预览图片路径不合法") || err.contains("预览图片不存在"));
+    }
+
+    #[test]
+    fn generate_pdf_preview_image_bytes_rejects_path_escape() {
+        let temp_dir = TestDir::new();
+        let nested_dir = temp_dir.path().join("nested");
+        fs::create_dir_all(&nested_dir).expect("nested dir should be created");
+        create_test_pdf(&nested_dir.join("demo.pdf")).expect("pdf should be written");
+
+        let err = generate_pdf_preview_image_bytes(BatchPdfWatermarkPreviewInput {
+            input_dir: temp_dir.path().to_string_lossy().into_owned(),
+            relative_path: "../nested/demo.pdf".into(),
+            watermark_text: "wm".into(),
+            watermark_long_edge_font_ratio: 0.028,
+            watermark_opacity: 0.3,
+            watermark_rotation_degrees: -35.0,
+            watermark_stripe_gap_chars: 2.0,
+            watermark_row_gap_lines: 3.0,
+        })
+        .expect_err("path escape should fail");
+
+        assert!(err.contains("预览 PDF 路径不合法") || err.contains("预览 PDF 不存在"));
     }
 
     struct TestDir {

@@ -15,6 +15,10 @@ export type BatchPdfWatermarkResult = {
   outputDir: string;
 };
 
+export type InputDirectoryPdfListResult = {
+  files: string[];
+};
+
 export type BatchPdfWatermarkProgress = {
   scannedFileCount: number;
   processedFileCount: number;

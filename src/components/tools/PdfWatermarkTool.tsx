@@ -1,17 +1,24 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { PickerField } from "../common/PickerField";
 import { pathsLookSame, pickOutputDir } from "../common/dialog";
-import type { BatchPdfWatermarkProgress, BatchPdfWatermarkResult, MessageTone } from "../tool-types";
+import type {
+  BatchPdfWatermarkProgress,
+  BatchPdfWatermarkResult,
+  InputDirectoryPdfListResult,
+  MessageTone,
+  PreviewImageBytesResult,
+} from "../tool-types";
 
 const DEFAULT_WATERMARK_TEXT = "仅限xxx使用,它用或复印无效";
 const DEFAULT_WATERMARK_LONG_EDGE_FONT_RATIO = 0.028;
-const DEFAULT_WATERMARK_OPACITY = 50 / 255;
-const DEFAULT_WATERMARK_ROTATION_DEGREES = (-1 * 180) / Math.PI;
+const DEFAULT_WATERMARK_OPACITY = 0.3;
+const DEFAULT_WATERMARK_ROTATION_DEGREES = -35;
 const DEFAULT_WATERMARK_STRIPE_GAP_CHARS = 2;
 const DEFAULT_WATERMARK_ROW_GAP_LINES = 3;
+const PREVIEW_DEBOUNCE_MS = 400;
 
 export function PdfWatermarkTool() {
   const [inputDir, setInputDir] = useState("");
@@ -30,6 +37,14 @@ export function PdfWatermarkTool() {
   const [watermarkRowGapLines, setWatermarkRowGapLines] = useState(
     DEFAULT_WATERMARK_ROW_GAP_LINES,
   );
+  const [previewPdfPath, setPreviewPdfPath] = useState("");
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageMessage, setPreviewImageMessage] = useState(
+    "选择输入目录后，将自动提取第一个 PDF 首页生成真实预览。",
+  );
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const previewObjectUrlRef = useRef("");
+  const previewRequestIdRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<BatchPdfWatermarkProgress | null>(null);
   const [message, setMessage] = useState("");
@@ -52,10 +67,104 @@ export function PdfWatermarkTool() {
     Number.isFinite(watermarkRowGapLines) &&
     watermarkRowGapLines >= 0;
 
+  useEffect(() => {
+    if (inputDir === "" || previewPdfPath === "") {
+      setPreviewBusy(false);
+      return;
+    }
+
+    let active = true;
+    const requestId = ++previewRequestIdRef.current;
+    const previewTimer = window.setTimeout(() => {
+      void loadPreviewImage();
+    }, PREVIEW_DEBOUNCE_MS);
+
+    setPreviewBusy(true);
+    if (previewImageUrl === "") {
+      setPreviewImageMessage("正在生成 PDF 首页真实预览...");
+    }
+
+    async function loadPreviewImage() {
+      try {
+        const result = await invoke<PreviewImageBytesResult>("generate_input_directory_pdf_preview", {
+          payload: {
+            inputDir,
+            relativePath: previewPdfPath,
+            watermarkText,
+            watermarkLongEdgeFontRatio,
+            watermarkOpacity,
+            watermarkRotationDegrees,
+            watermarkStripeGapChars,
+            watermarkRowGapLines,
+          },
+        });
+        if (!active || previewRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        const nextObjectUrl = URL.createObjectURL(
+          new Blob([new Uint8Array(result.bytes)], { type: "image/png" }),
+        );
+        if (previewObjectUrlRef.current !== "") {
+          URL.revokeObjectURL(previewObjectUrlRef.current);
+        }
+        previewObjectUrlRef.current = nextObjectUrl;
+        setPreviewImageUrl(nextObjectUrl);
+        setPreviewBusy(false);
+        setPreviewImageMessage(
+          `真实预览：${previewPdfPath}（倾斜角度 ${formatRotationDegrees(watermarkRotationDegrees)}°）`,
+        );
+      } catch (_error) {
+        if (!active || previewRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setPreviewBusy(false);
+        setPreviewImageMessage("PDF 首页预览生成失败，请检查参数或更换目录后重试。");
+      }
+    }
+
+    return () => {
+      active = false;
+      window.clearTimeout(previewTimer);
+    };
+  }, [
+    inputDir,
+    previewImageUrl,
+    previewPdfPath,
+    watermarkLongEdgeFontRatio,
+    watermarkOpacity,
+    watermarkRotationDegrees,
+    watermarkRowGapLines,
+    watermarkStripeGapChars,
+    watermarkText,
+  ]);
+
   async function handlePickInputDir() {
     const selected = await pickOutputDir();
     if (selected) {
       setInputDir(selected);
+      if (previewObjectUrlRef.current !== "") {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = "";
+      }
+      setPreviewImageUrl("");
+      setPreviewPdfPath("");
+      try {
+        const result = await invoke<InputDirectoryPdfListResult>("list_input_directory_pdfs", {
+          inputDir: selected,
+        });
+        const firstPdf = result.files[0] ?? "";
+        setPreviewPdfPath(firstPdf);
+        setPreviewBusy(firstPdf !== "");
+        setPreviewImageMessage(
+          firstPdf !== ""
+            ? "正在生成 PDF 首页真实预览..."
+            : "目录内未找到可预览 PDF，无法生成真实预览。",
+        );
+      } catch (_error) {
+        setPreviewImageMessage("预览 PDF 列表加载失败，无法生成真实预览。");
+      }
       setMessage("");
       setTone("idle");
     }
@@ -69,6 +178,14 @@ export function PdfWatermarkTool() {
       setTone("idle");
     }
   }
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current !== "") {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -185,7 +302,7 @@ export function PdfWatermarkTool() {
               type="number"
               min={0}
               max={1}
-              step="any"
+              step={0.05}
               value={watermarkOpacity}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
@@ -196,18 +313,18 @@ export function PdfWatermarkTool() {
         </label>
 
         <label className="field">
-          <span>旋转角度</span>
+          <span>倾斜角度（度）</span>
           <div className="input-shell">
             <input
-              aria-label="PDF 水印旋转角度"
+              aria-label="PDF 水印倾斜角度"
               type="number"
               min={-89}
               max={89}
-              step="any"
+              step={1}
               value={watermarkRotationDegrees}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
-                setWatermarkRotationDegrees(Number.isFinite(nextValue) ? nextValue : 0);
+                setWatermarkRotationDegrees(Number.isFinite(nextValue) ? nextValue : Number.NaN);
               }}
             />
           </div>
@@ -220,7 +337,7 @@ export function PdfWatermarkTool() {
               aria-label="PDF 水印条间距"
               type="number"
               min={0}
-              step="any"
+              step={0.1}
               value={watermarkStripeGapChars}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
@@ -237,7 +354,7 @@ export function PdfWatermarkTool() {
               aria-label="PDF 水印行间距"
               type="number"
               min={0}
-              step="any"
+              step={0.1}
               value={watermarkRowGapLines}
               onChange={(event) => {
                 const nextValue = event.currentTarget.valueAsNumber;
@@ -247,6 +364,30 @@ export function PdfWatermarkTool() {
           </div>
         </label>
       </div>
+
+      <section className="preview-panel">
+        <div className="preview-panel-head">
+          <span>参数预览</span>
+          <p>{previewImageMessage}</p>
+        </div>
+        <div
+          aria-label="PDF 水印参数预览"
+          className={`watermark-preview ${previewImageUrl !== "" ? "has-image" : ""}`}
+          role="img"
+        >
+          {previewBusy && <div className="watermark-preview-updating">更新中</div>}
+          {previewImageUrl !== "" && (
+            <img
+              alt={`真实预览图：${previewPdfPath}`}
+              className="watermark-preview-image"
+              src={previewImageUrl}
+            />
+          )}
+          {previewImageUrl === "" && !previewBusy && (
+            <div className="watermark-preview-placeholder">{previewImageMessage}</div>
+          )}
+        </div>
+      </section>
 
       <p className={`status-line ${directoryConflict ? "error" : "idle"}`}>
         {directoryConflict
@@ -290,4 +431,8 @@ function formatBatchPdfProgress(progress: BatchPdfWatermarkProgress) {
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
   return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}）${currentFile}`;
+}
+
+function formatRotationDegrees(rotationDegrees: number) {
+  return rotationDegrees.toFixed(1);
 }
