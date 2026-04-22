@@ -1,10 +1,10 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use kx_cmds::traits::Cmd;
 use kx_cmds::{
     Cmds,
     traits::video::{CmdVideo, SeriesRecutReq},
@@ -1134,8 +1134,7 @@ fn extract_video_first_frame(video_path: &Path, output_path: &Path) -> Result<()
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
-
-    let output = Command::new("ffmpeg")
+    let output = Cmds::cmd("ffmpeg")
         .args([
             "-y",
             "-i",
@@ -1655,12 +1654,12 @@ endobj
 endobj
 xref
 0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000241 00000 n 
-0000000330 00000 n 
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000241 00000 n
+0000000330 00000 n
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
