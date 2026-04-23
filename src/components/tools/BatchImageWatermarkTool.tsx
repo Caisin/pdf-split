@@ -208,7 +208,7 @@ export function BatchImageWatermarkTool() {
       setProgress(null);
       setTone("success");
       setMessage(
-        `完成：扫描 ${result.scannedFileCount} 张，成功 ${result.successCount} 张，失败 ${result.failureCount} 张，输出目录 ${result.outputDir}`,
+        `完成：扫描 ${result.scannedFileCount} 张，成功 ${result.successCount} 张，失败 ${result.failureCount} 张，跳过 ${result.skippedCount} 张，输出目录 ${result.outputDir}`,
       );
     } catch (error) {
       setProgress(null);
@@ -427,7 +427,7 @@ function formatBatchImageProgress(progress: BatchImageWatermarkProgress) {
   const currentFile = progress.currentFile
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
-  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}）${currentFile}`;
+  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}，跳过 ${progress.skippedCount}）${currentFile}`;
 }
 
 function getImageMimeType(filePath: string) {

@@ -134,6 +134,7 @@ describe("App", () => {
       scannedFileCount: 3,
       successCount: 2,
       failureCount: 1,
+      skippedCount: 0,
       outputDir: "/tmp/output-dir",
     });
 
@@ -186,6 +187,7 @@ describe("App", () => {
           scannedFileCount: number;
           successCount: number;
           failureCount: number;
+          skippedCount: number;
           outputDir: string;
         }) => void)
       | undefined;
@@ -198,6 +200,7 @@ describe("App", () => {
         scannedFileCount: number;
         successCount: number;
         failureCount: number;
+        skippedCount: number;
         outputDir: string;
       }>((resolve) => {
         resolveInvoke = resolve;
@@ -240,6 +243,7 @@ describe("App", () => {
           processedFileCount: 2,
           successCount: 1,
           failureCount: 1,
+          skippedCount: 0,
           currentFile: "nested/demo.pdf",
         },
       });
@@ -247,7 +251,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("progressbar", { name: "PDF 水印处理进度" })).toHaveValue(2);
     expect(
-      screen.getAllByText("处理中：2 / 5（成功 1，失败 1）当前文件 nested/demo.pdf"),
+      screen.getAllByText("处理中：2 / 5（成功 1，失败 1，跳过 0）当前文件 nested/demo.pdf"),
     ).toHaveLength(2);
 
     await act(async () => {
@@ -255,6 +259,7 @@ describe("App", () => {
         scannedFileCount: 5,
         successCount: 4,
         failureCount: 1,
+        skippedCount: 0,
         outputDir: "/tmp/output-pdfs",
       });
     });
@@ -530,6 +535,8 @@ describe("App", () => {
       | ((value: {
           scannedFileCount: number;
           successCount: number;
+          failureCount: number;
+          skippedCount: number;
           generatedOverlayCount: number;
           reusedOverlayCount: number;
           outputDir: string;
@@ -549,6 +556,8 @@ describe("App", () => {
       return await new Promise<{
         scannedFileCount: number;
         successCount: number;
+        failureCount: number;
+        skippedCount: number;
         generatedOverlayCount: number;
         reusedOverlayCount: number;
         outputDir: string;
@@ -596,6 +605,8 @@ describe("App", () => {
           scannedFileCount: 6,
           processedFileCount: 2,
           successCount: 2,
+          failureCount: 0,
+          skippedCount: 0,
           generatedOverlayCount: 1,
           reusedOverlayCount: 1,
           currentFile: "nested/demo.mp4",
@@ -605,13 +616,17 @@ describe("App", () => {
 
     expect(await screen.findByRole("progressbar", { name: "视频水印处理进度" })).toHaveValue(2);
     expect(
-      screen.getAllByText("处理中：2 / 6（成功 2，新增水印图 1，复用水印图 1）当前文件 nested/demo.mp4"),
+      screen.getAllByText(
+        "处理中：2 / 6（成功 2，失败 0，跳过 0，新增水印图 1，复用水印图 1）当前文件 nested/demo.mp4",
+      ),
     ).toHaveLength(2);
 
     await act(async () => {
       resolveInvoke?.({
         scannedFileCount: 6,
         successCount: 6,
+        failureCount: 0,
+        skippedCount: 0,
         generatedOverlayCount: 2,
         reusedOverlayCount: 4,
         outputDir: "/tmp/output-videos",
@@ -831,6 +846,7 @@ describe("App", () => {
           scannedFileCount: number;
           successCount: number;
           failureCount: number;
+          skippedCount: number;
           outputDir: string;
         }) => void)
       | undefined;
@@ -848,6 +864,7 @@ describe("App", () => {
           scannedFileCount: number;
           successCount: number;
           failureCount: number;
+          skippedCount: number;
           outputDir: string;
         }>((resolve) => {
           resolveInvoke = resolve;
@@ -892,6 +909,7 @@ describe("App", () => {
           processedFileCount: 3,
           successCount: 2,
           failureCount: 1,
+          skippedCount: 0,
           currentFile: "nested/demo.png",
         },
       });
@@ -899,7 +917,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("progressbar", { name: "图片水印处理进度" })).toHaveValue(3);
     expect(
-      screen.getAllByText("处理中：3 / 10（成功 2，失败 1）当前文件 nested/demo.png"),
+      screen.getAllByText("处理中：3 / 10（成功 2，失败 1，跳过 0）当前文件 nested/demo.png"),
     ).toHaveLength(2);
 
     await act(async () => {
@@ -907,6 +925,7 @@ describe("App", () => {
         scannedFileCount: 10,
         successCount: 9,
         failureCount: 1,
+        skippedCount: 0,
         outputDir: "/tmp/output-images",
       });
     });

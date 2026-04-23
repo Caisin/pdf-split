@@ -12,6 +12,7 @@ export type BatchPdfWatermarkResult = {
   scannedFileCount: number;
   successCount: number;
   failureCount: number;
+  skippedCount: number;
   outputDir: string;
 };
 
@@ -24,12 +25,15 @@ export type BatchPdfWatermarkProgress = {
   processedFileCount: number;
   successCount: number;
   failureCount: number;
+  skippedCount: number;
   currentFile: string | null;
 };
 
 export type BatchVideoWatermarkResult = {
   scannedFileCount: number;
   successCount: number;
+  failureCount: number;
+  skippedCount: number;
   generatedOverlayCount: number;
   reusedOverlayCount: number;
   outputDir: string;
@@ -39,6 +43,8 @@ export type BatchVideoWatermarkProgress = {
   scannedFileCount: number;
   processedFileCount: number;
   successCount: number;
+  failureCount: number;
+  skippedCount: number;
   generatedOverlayCount: number;
   reusedOverlayCount: number;
   currentFile: string | null;
@@ -52,6 +58,7 @@ export type BatchImageWatermarkResult = {
   scannedFileCount: number;
   successCount: number;
   failureCount: number;
+  skippedCount: number;
   outputDir: string;
 };
 
@@ -60,6 +67,7 @@ export type BatchImageWatermarkProgress = {
   processedFileCount: number;
   successCount: number;
   failureCount: number;
+  skippedCount: number;
   currentFile: string | null;
 };
 

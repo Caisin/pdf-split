@@ -225,7 +225,7 @@ export function PdfWatermarkTool() {
       setProgress(null);
       setTone("success");
       setMessage(
-        `完成：扫描 ${result.scannedFileCount} 个 PDF，成功 ${result.successCount} 个，失败 ${result.failureCount} 个，输出目录 ${result.outputDir}`,
+        `完成：扫描 ${result.scannedFileCount} 个 PDF，成功 ${result.successCount} 个，失败 ${result.failureCount} 个，跳过 ${result.skippedCount} 个，输出目录 ${result.outputDir}`,
       );
     } catch (error) {
       setProgress(null);
@@ -430,7 +430,7 @@ function formatBatchPdfProgress(progress: BatchPdfWatermarkProgress) {
   const currentFile = progress.currentFile
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
-  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}）${currentFile}`;
+  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}，跳过 ${progress.skippedCount}）${currentFile}`;
 }
 
 function formatRotationDegrees(rotationDegrees: number) {

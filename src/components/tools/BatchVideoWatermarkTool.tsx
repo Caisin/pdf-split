@@ -214,7 +214,7 @@ export function BatchVideoWatermarkTool() {
       setProgress(null);
       setTone("success");
       setMessage(
-        `完成：扫描 ${result.scannedFileCount} 个视频，成功 ${result.successCount} 个，新增水印图 ${result.generatedOverlayCount} 张，复用水印图 ${result.reusedOverlayCount} 张，输出目录 ${result.outputDir}`,
+        `完成：扫描 ${result.scannedFileCount} 个视频，成功 ${result.successCount} 个，失败 ${result.failureCount} 个，跳过 ${result.skippedCount} 个，新增水印图 ${result.generatedOverlayCount} 张，复用水印图 ${result.reusedOverlayCount} 张，输出目录 ${result.outputDir}`,
       );
     } catch (error) {
       setProgress(null);
@@ -438,7 +438,7 @@ function formatBatchVideoProgress(progress: BatchVideoWatermarkProgress) {
   const currentFile = progress.currentFile
     ? `当前文件 ${progress.currentFile}`
     : "正在准备文件列表";
-  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，新增水印图 ${progress.generatedOverlayCount}，复用水印图 ${progress.reusedOverlayCount}）${currentFile}`;
+  return `处理中：${progress.processedFileCount} / ${progress.scannedFileCount}（成功 ${progress.successCount}，失败 ${progress.failureCount}，跳过 ${progress.skippedCount}，新增水印图 ${progress.generatedOverlayCount}，复用水印图 ${progress.reusedOverlayCount}）${currentFile}`;
 }
 
 function formatRotationDegrees(rotationDegrees: number) {
