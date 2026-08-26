@@ -1,4 +1,5 @@
 mod dialog;
+mod download;
 mod image;
 mod pdf;
 mod shared;
@@ -12,8 +13,8 @@ use crate::models::{
     BatchImageWatermarkInput, BatchImageWatermarkPreviewInput, BatchPdfTextWatermarkInput,
     BatchPdfWatermarkPreviewInput, BatchVideoWatermarkInput, ExtractImagesResult,
     InputDirectoryImageListResult, InputDirectoryPdfListResult, InputDirectoryVideoListResult,
-    PdfTextWatermarkInput, PreviewImageBytesResult, SeriesRecutInput, SeriesRecutResult,
-    SplitPdfResult, WatermarkPdfResult,
+    PdfTextWatermarkInput, PreviewImageBytesResult, SeriesDownloadInput, SeriesDownloadListSummary,
+    SeriesDownloadResult, SeriesRecutInput, SeriesRecutResult, SplitPdfResult, WatermarkPdfResult,
 };
 
 #[tauri::command]
@@ -24,6 +25,21 @@ pub fn select_pdf_file(window: WebviewWindow) -> Result<Option<String>, String> 
 #[tauri::command]
 pub fn select_output_dir(window: WebviewWindow) -> Result<Option<String>, String> {
     dialog::select_output_dir(window)
+}
+
+#[tauri::command]
+pub fn inspect_series_download_list(
+    list_path: String,
+) -> Result<SeriesDownloadListSummary, String> {
+    download::inspect_series_download_list(list_path)
+}
+
+#[tauri::command]
+pub async fn download_series_videos(
+    window: WebviewWindow,
+    payload: SeriesDownloadInput,
+) -> Result<SeriesDownloadResult, String> {
+    download::download_series_videos(window, payload).await
 }
 
 #[tauri::command]

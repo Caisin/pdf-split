@@ -6,7 +6,8 @@ export type ToolTab =
   | "watermark"
   | "imageWatermark"
   | "videoWatermark"
-  | "seriesRecut";
+  | "seriesRecut"
+  | "seriesDownload";
 
 type TabItem = {
   value: ToolTab;
@@ -75,6 +76,17 @@ export const TAB_ITEMS: TabItem[] = [
         <rect x="4.5" y="5" width="15" height="14" rx="3" />
         <path d="M9 8.5h6M9 12h6M9 15.5h4" />
         <path d="M14 18l4-4" />
+      </svg>
+    ),
+  },
+  {
+    value: "seriesDownload",
+    label: "剧集下载",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4v11" />
+        <path d="M8 11l4 4 4-4" />
+        <path d="M5 19h14" />
       </svg>
     ),
   },

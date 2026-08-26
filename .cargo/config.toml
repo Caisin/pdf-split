@@ -1,0 +1,6 @@
+[registries.hekx]
+index = "sparse+http://kellnr.caisin.tech/api/v1/crates/"
+credential-provider = ["cargo:token"]
+
+[net]
+git-fetch-with-cli = true

@@ -3703,6 +3703,7 @@ dependencies = [
  "kx-cmds",
  "kx-image",
  "kx-pdf",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",

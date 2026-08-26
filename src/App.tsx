@@ -8,6 +8,7 @@ import { BatchVideoWatermarkTool } from "./components/tools/BatchVideoWatermarkT
 import { ExtractImagesTool } from "./components/tools/ExtractImagesTool";
 import { PdfWatermarkTool } from "./components/tools/PdfWatermarkTool";
 import { SeriesRecutTool } from "./components/tools/SeriesRecutTool";
+import { SeriesDownloadTool } from "./components/tools/SeriesDownloadTool";
 import { SplitPdfTool } from "./components/tools/SplitPdfTool";
 
 function App() {
@@ -52,6 +53,10 @@ function App() {
 
           <Tabs.Content className="tab-panel" value="seriesRecut">
             <SeriesRecutTool />
+          </Tabs.Content>
+
+          <Tabs.Content className="tab-panel" value="seriesDownload">
+            <SeriesDownloadTool />
           </Tabs.Content>
         </Tabs.Root>
       </section>

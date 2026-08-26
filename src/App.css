@@ -405,6 +405,40 @@ button:disabled {
   line-height: 1.5;
 }
 
+.download-summary {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 50px;
+  padding: 7px 14px;
+  border: 1px solid rgba(104, 69, 46, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.download-summary span {
+  color: #6b503f;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.download-summary strong {
+  color: #201812;
+  font-size: 0.94rem;
+}
+
+.series-list {
+  max-height: 72px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(196, 101, 37, 0.42);
+  color: #6d5a4e;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
 .preview-panel {
   display: flex;
   flex-direction: column;

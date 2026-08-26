@@ -91,6 +91,7 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: "批量图片水印" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "批量视频水印" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "剧集切分" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "剧集下载" })).toBeInTheDocument();
     expect(screen.getByText("PDF 转图片")).toBeInTheDocument();
     expect(screen.queryByText("PDF 文字水印")).not.toBeInTheDocument();
   });
@@ -310,6 +311,117 @@ describe("App", () => {
     expect(screen.getByLabelText("前面保留集数")).toHaveValue(1);
     expect(screen.getByLabelText("目标总集数")).toHaveValue(3);
     expect(screen.getByRole("button", { name: "开始剧集切分" })).toBeDisabled();
+  });
+
+  test("renders series download with five concurrent downloads by default", () => {
+    render(<App />);
+    activateTab("剧集下载");
+
+    expect(screen.getByRole("heading", { name: "剧集下载" })).toBeInTheDocument();
+    expect(screen.getByLabelText("同时下载数")).toHaveValue(5);
+    expect(screen.getByText("等待导入")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始下载剧集" })).toBeDisabled();
+  });
+
+  test("imports a URL list and reports concurrent download progress", async () => {
+    openMock
+      .mockResolvedValueOnce("/tmp/series-URLPull.txt")
+      .mockResolvedValueOnce("/tmp/downloads");
+
+    let resolveDownload:
+      | ((value: {
+          totalCount: number;
+          successCount: number;
+          failureCount: number;
+          skippedCount: number;
+          seriesCount: number;
+          outputDir: string;
+          failedItems: string[];
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation(async (command, args) => {
+      if (command === "inspect_series_download_list") {
+        expect(args).toEqual({ listPath: "/tmp/series-URLPull.txt" });
+        return {
+          episodeCount: 73,
+          series: [{ name: "生死线倒计时", episodeCount: 73 }],
+        };
+      }
+      if (command === "download_series_videos") {
+        return await new Promise((resolve) => {
+          resolveDownload = resolve;
+        });
+      }
+      return undefined;
+    });
+
+    render(<App />);
+    activateTab("剧集下载");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择 URL 下载清单" }));
+    expect(await screen.findByText("1 部剧 · 73 集")).toBeInTheDocument();
+    expect(screen.getByText("生死线倒计时（73 集）")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择剧集下载目录" }));
+    await screen.findByDisplayValue("/tmp/downloads");
+    fireEvent.change(screen.getByLabelText("同时下载数"), {
+      target: { value: "8", valueAsNumber: 8 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始下载剧集" }));
+
+    expect(await screen.findByRole("button", { name: "下载中..." })).toBeDisabled();
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("download_series_videos", {
+        payload: {
+          listPath: "/tmp/series-URLPull.txt",
+          outputDir: "/tmp/downloads",
+          concurrentDownloads: 8,
+        },
+      });
+    });
+    expect(listenMock).toHaveBeenCalledWith(
+      "series-download-progress",
+      expect.any(Function),
+    );
+
+    await act(async () => {
+      getProgressHandler()?.({
+        payload: {
+          totalCount: 73,
+          processedCount: 18,
+          successCount: 17,
+          failureCount: 1,
+          skippedCount: 0,
+          currentSeries: "生死线倒计时",
+          currentEpisode: 18,
+        },
+      });
+    });
+
+    expect(await screen.findByRole("progressbar", { name: "剧集下载进度" })).toHaveValue(18);
+    expect(
+      screen.getAllByText(
+        "下载进度：18 / 73（成功 17，失败 1，跳过 0），刚完成 生死线倒计时 第18集",
+      ),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      resolveDownload?.({
+        totalCount: 73,
+        successCount: 72,
+        failureCount: 1,
+        skippedCount: 0,
+        seriesCount: 1,
+        outputDir: "/tmp/downloads",
+        failedItems: ["生死线倒计时 第18集：连接失败"],
+      });
+    });
+
+    expect(
+      await screen.findByText(
+        "下载完成，但有失败：成功 72，失败 1，跳过 0；生死线倒计时 第18集：连接失败",
+      ),
+    ).toHaveClass("error");
   });
 
   test("shows series recut progress and keeps submit disabled while running", async () => {

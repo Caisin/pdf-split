@@ -96,4 +96,34 @@ export type SeriesRecutProgress = {
   currentFile: string | null;
 };
 
+export type SeriesDownloadSummary = {
+  name: string;
+  episodeCount: number;
+};
+
+export type SeriesDownloadListSummary = {
+  episodeCount: number;
+  series: SeriesDownloadSummary[];
+};
+
+export type SeriesDownloadProgress = {
+  totalCount: number;
+  processedCount: number;
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  currentSeries: string | null;
+  currentEpisode: number | null;
+};
+
+export type SeriesDownloadResult = {
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  seriesCount: number;
+  outputDir: string;
+  failedItems: string[];
+};
+
 export type MessageTone = "idle" | "success" | "error";
