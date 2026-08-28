@@ -363,6 +363,8 @@ describe("App", () => {
     expect(openMock).toHaveBeenCalledWith({ multiple: false, directory: true });
     expect(await screen.findByText("3 个 TXT · 1 部剧 · 73 集")).toBeInTheDocument();
     expect(screen.getByText("生死线倒计时（73 集）")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("/tmp/series-lists")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "开始下载剧集" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "选择剧集下载目录" }));
     await screen.findByDisplayValue("/tmp/downloads");

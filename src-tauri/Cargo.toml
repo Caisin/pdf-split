@@ -1,6 +1,6 @@
 [package]
 name = "pdf-split"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Tauri App"
 authors = ["hekx"]
 edition = "2024"

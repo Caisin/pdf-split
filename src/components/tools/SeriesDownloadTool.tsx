@@ -55,6 +55,7 @@ export function SeriesDownloadTool() {
         { inputDir: selected },
       );
       setSummary(nextSummary);
+      setOutputDir(selected);
       setTone("success");
       setMessage(formatSummary(nextSummary));
     } catch (error) {
