@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeriesDownloadInput {
-    pub list_path: String,
+    pub input_dir: String,
     pub output_dir: String,
     pub concurrent_downloads: usize,
 }
@@ -18,6 +18,7 @@ pub struct SeriesDownloadSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeriesDownloadListSummary {
+    pub file_count: usize,
     pub episode_count: usize,
     pub series: Vec<SeriesDownloadSummary>,
 }

@@ -323,9 +323,9 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "开始下载剧集" })).toBeDisabled();
   });
 
-  test("imports a URL list and reports concurrent download progress", async () => {
+  test("imports TXT lists from a directory and reports concurrent download progress", async () => {
     openMock
-      .mockResolvedValueOnce("/tmp/series-URLPull.txt")
+      .mockResolvedValueOnce("/tmp/series-lists")
       .mockResolvedValueOnce("/tmp/downloads");
 
     let resolveDownload:
@@ -340,9 +340,10 @@ describe("App", () => {
         }) => void)
       | undefined;
     invokeMock.mockImplementation(async (command, args) => {
-      if (command === "inspect_series_download_list") {
-        expect(args).toEqual({ listPath: "/tmp/series-URLPull.txt" });
+      if (command === "inspect_series_download_directory") {
+        expect(args).toEqual({ inputDir: "/tmp/series-lists" });
         return {
+          fileCount: 3,
           episodeCount: 73,
           series: [{ name: "生死线倒计时", episodeCount: 73 }],
         };
@@ -358,8 +359,9 @@ describe("App", () => {
     render(<App />);
     activateTab("剧集下载");
 
-    fireEvent.click(screen.getByRole("button", { name: "选择 URL 下载清单" }));
-    expect(await screen.findByText("1 部剧 · 73 集")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择 TXT 清单目录" }));
+    expect(openMock).toHaveBeenCalledWith({ multiple: false, directory: true });
+    expect(await screen.findByText("3 个 TXT · 1 部剧 · 73 集")).toBeInTheDocument();
     expect(screen.getByText("生死线倒计时（73 集）")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "选择剧集下载目录" }));
@@ -373,7 +375,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith("download_series_videos", {
         payload: {
-          listPath: "/tmp/series-URLPull.txt",
+          inputDir: "/tmp/series-lists",
           outputDir: "/tmp/downloads",
           concurrentDownloads: 8,
         },

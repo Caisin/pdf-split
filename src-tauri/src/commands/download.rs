@@ -39,11 +39,11 @@ struct DownloadOutcome {
     status: DownloadStatus,
 }
 
-pub fn inspect_series_download_list(
-    list_path: String,
+pub fn inspect_series_download_directory(
+    input_dir: String,
 ) -> Result<SeriesDownloadListSummary, String> {
-    let items = read_download_list(&list_path)?;
-    Ok(build_summary(&items))
+    let (items, file_count) = read_download_directory(&input_dir)?;
+    Ok(build_summary(&items, file_count))
 }
 
 pub async fn download_series_videos(
@@ -70,7 +70,7 @@ async fn run_series_download<F>(
 where
     F: FnMut(SeriesDownloadProgressPayload),
 {
-    let list_path = require_value("下载清单", payload.list_path)?;
+    let input_dir = require_value("TXT 清单目录", payload.input_dir)?;
     let output_dir = require_value("输出目录", payload.output_dir)?;
     if !(1..=MAX_CONCURRENT_DOWNLOADS).contains(&payload.concurrent_downloads) {
         return Err(format!(
@@ -78,7 +78,7 @@ where
         ));
     }
 
-    let items = read_download_list(&list_path)?;
+    let (items, _) = read_download_directory(&input_dir)?;
     let output_root = absolutize_path(Path::new(&output_dir))?;
     fs::create_dir_all(&output_root).map_err(|error| format!("无法创建输出目录：{error}"))?;
     let output_root = output_root
@@ -244,14 +244,72 @@ async fn download_response_to_file(
     Ok(())
 }
 
-fn read_download_list(list_path: &str) -> Result<Vec<DownloadItem>, String> {
-    let path = PathBuf::from(list_path);
-    if !path.is_file() {
-        return Err("下载清单不存在或不是有效文件".to_string());
+fn read_download_directory(input_dir: &str) -> Result<(Vec<DownloadItem>, usize), String> {
+    let root = PathBuf::from(input_dir);
+    if !root.is_dir() {
+        return Err("TXT 清单目录不存在或不是有效目录".to_string());
     }
-    let content =
-        fs::read_to_string(&path).map_err(|error| format!("无法读取下载清单：{error}"))?;
-    parse_download_list(&content)
+
+    let mut text_files = Vec::new();
+    collect_text_files(&root, &mut text_files)?;
+    text_files.sort();
+    if text_files.is_empty() {
+        return Err("所选目录中没有 TXT 下载清单".to_string());
+    }
+
+    let mut items = Vec::new();
+    let mut identities = HashSet::new();
+    for path in &text_files {
+        let relative_path = path.strip_prefix(&root).unwrap_or(path.as_path());
+        let content = fs::read_to_string(path)
+            .map_err(|error| format!("无法读取 TXT 清单“{}”：{error}", relative_path.display()))?;
+        let file_items = parse_download_list(&content)
+            .map_err(|error| format!("TXT 清单“{}”解析失败：{error}", relative_path.display()))?;
+
+        for item in file_items {
+            let identity = (item.directory_name.clone(), item.episode);
+            if !identities.insert(identity) {
+                return Err(format!(
+                    "TXT 清单“{}”存在跨文件重复剧集：{} 第{}集",
+                    relative_path.display(),
+                    item.series_name,
+                    item.episode
+                ));
+            }
+            items.push(item);
+        }
+    }
+
+    items.sort_by(|left, right| {
+        left.series_name
+            .cmp(&right.series_name)
+            .then(left.episode.cmp(&right.episode))
+    });
+    Ok((items, text_files.len()))
+}
+
+fn collect_text_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir)
+        .map_err(|error| format!("无法读取 TXT 清单目录“{}”：{error}", dir.display()))?
+    {
+        let entry = entry.map_err(|error| format!("无法读取目录项：{error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("无法读取文件类型：{error}"))?;
+        let path = entry.path();
+        if file_type.is_dir() {
+            collect_text_files(&path, files)?;
+        } else if file_type.is_file() && is_text_file(&path) {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn is_text_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
 }
 
 fn parse_download_list(content: &str) -> Result<Vec<DownloadItem>, String> {
@@ -345,12 +403,13 @@ fn sanitize_directory_name(name: &str) -> Option<String> {
     }
 }
 
-fn build_summary(items: &[DownloadItem]) -> SeriesDownloadListSummary {
+fn build_summary(items: &[DownloadItem], file_count: usize) -> SeriesDownloadListSummary {
     let mut counts = BTreeMap::<String, usize>::new();
     for item in items {
         *counts.entry(item.series_name.clone()).or_default() += 1;
     }
     SeriesDownloadListSummary {
+        file_count,
         episode_count: items.len(),
         series: counts
             .into_iter()
@@ -392,7 +451,7 @@ mod tests {
              https://example.com/b.mp4,另一部剧 - 第3集",
         )
         .expect("valid list should parse");
-        let summary = build_summary(&items);
+        let summary = build_summary(&items, 2);
 
         assert_eq!(
             items
@@ -402,7 +461,61 @@ mod tests {
             Some("剧_名")
         );
         assert_eq!(summary.episode_count, 2);
+        assert_eq!(summary.file_count, 2);
         assert_eq!(summary.series.len(), 2);
+    }
+
+    #[test]
+    fn reads_all_txt_files_recursively_and_ignores_other_extensions() {
+        let root = test_directory("download-directory");
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).expect("nested directory should be created");
+        fs::write(
+            root.join("first.txt"),
+            "https://example.com/1.mp4,第一部剧 - 第1集",
+        )
+        .expect("first list should be written");
+        fs::write(
+            nested.join("second.TXT"),
+            "https://example.com/2.mp4,第二部剧 - 第2集",
+        )
+        .expect("second list should be written");
+        fs::write(
+            root.join("ignored.csv"),
+            "https://example.com/3.mp4,不应导入 - 第3集",
+        )
+        .expect("ignored file should be written");
+
+        let (items, file_count) =
+            read_download_directory(&root.to_string_lossy()).expect("directory lists should parse");
+        let summary = build_summary(&items, file_count);
+
+        assert_eq!(summary.file_count, 2);
+        assert_eq!(summary.episode_count, 2);
+        assert_eq!(summary.series.len(), 2);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_duplicate_episode_targets_across_txt_files() {
+        let root = test_directory("download-duplicate");
+        fs::create_dir_all(&root).expect("test directory should be created");
+        fs::write(
+            root.join("first.txt"),
+            "https://example.com/1.mp4,同一部剧 - 第1集",
+        )
+        .expect("first list should be written");
+        fs::write(
+            root.join("second.txt"),
+            "https://example.com/2.mp4,同一部剧 - 第1集",
+        )
+        .expect("second list should be written");
+
+        let error = read_download_directory(&root.to_string_lossy())
+            .expect_err("duplicates across files should fail");
+
+        assert!(error.contains("跨文件重复剧集"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -428,7 +541,7 @@ mod tests {
     fn rejects_concurrency_outside_the_supported_range() {
         let error = tauri::async_runtime::block_on(run_series_download(
             SeriesDownloadInput {
-                list_path: "list.txt".into(),
+                input_dir: "lists".into(),
                 output_dir: "/tmp".into(),
                 concurrent_downloads: 21,
             },
@@ -440,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn downloads_multiple_episodes_into_numeric_mp4_files() {
+    fn downloads_directory_lists_into_series_directories() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
         let address = listener
             .local_addr()
@@ -462,26 +575,25 @@ mod tests {
             }
         });
 
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be valid")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("pdf-split-download-test-{unique}"));
+        let root = test_directory("download-test");
+        let input_dir = root.join("lists");
         let output_dir = root.join("output");
-        fs::create_dir_all(&root).expect("test root should be created");
-        let list_path = root.join("list.txt");
+        fs::create_dir_all(&input_dir).expect("input directory should be created");
         fs::write(
-            &list_path,
-            format!(
-                ",http://{address}/1.mp4,测试剧 - 第1集\n,http://{address}/2.mp4,测试剧 - 第2集"
-            ),
+            input_dir.join("first.txt"),
+            format!(",http://{address}/1.mp4,第一部剧 - 第1集"),
         )
-        .expect("download list should be written");
+        .expect("first download list should be written");
+        fs::write(
+            input_dir.join("second.txt"),
+            format!(",http://{address}/2.mp4,第二部剧 - 第2集"),
+        )
+        .expect("second download list should be written");
 
         let mut progress = Vec::new();
         let result = tauri::async_runtime::block_on(run_series_download(
             SeriesDownloadInput {
-                list_path: list_path.to_string_lossy().into_owned(),
+                input_dir: input_dir.to_string_lossy().into_owned(),
                 output_dir: output_dir.to_string_lossy().into_owned(),
                 concurrent_downloads: 2,
             },
@@ -492,10 +604,19 @@ mod tests {
         server.join().expect("test server should finish");
         assert_eq!(result.success_count, 2);
         assert_eq!(result.failure_count, 0);
-        assert!(output_dir.join("测试剧/1.mp4").is_file());
-        assert!(output_dir.join("测试剧/2.mp4").is_file());
-        assert!(!output_dir.join("测试剧/1.mp4.part").exists());
+        assert_eq!(result.series_count, 2);
+        assert!(output_dir.join("第一部剧/1.mp4").is_file());
+        assert!(output_dir.join("第二部剧/2.mp4").is_file());
+        assert!(!output_dir.join("第一部剧/1.mp4.part").exists());
         assert_eq!(progress.last().map(|event| event.processed_count), Some(2));
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn test_directory(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        std::env::temp_dir().join(format!("pdf-split-{label}-{unique}"))
     }
 }

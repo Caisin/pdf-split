@@ -10,16 +10,6 @@ export async function pickPdfFile() {
   return normalizeDialogSelection(selected);
 }
 
-export async function pickUrlListFile() {
-  const selected = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "URL 下载清单", extensions: ["txt", "csv"] }],
-  });
-
-  return normalizeDialogSelection(selected);
-}
-
 export async function pickOutputDir() {
   const selected = await open({
     multiple: false,

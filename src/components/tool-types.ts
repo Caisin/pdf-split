@@ -102,6 +102,7 @@ export type SeriesDownloadSummary = {
 };
 
 export type SeriesDownloadListSummary = {
+  fileCount: number;
   episodeCount: number;
   series: SeriesDownloadSummary[];
 };

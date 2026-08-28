@@ -9,7 +9,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::select_pdf_file,
             commands::select_output_dir,
-            commands::inspect_series_download_list,
+            commands::inspect_series_download_directory,
             commands::download_series_videos,
             commands::split_pdf_to_images,
             commands::add_text_watermark,

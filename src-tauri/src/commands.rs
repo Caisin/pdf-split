@@ -28,10 +28,10 @@ pub fn select_output_dir(window: WebviewWindow) -> Result<Option<String>, String
 }
 
 #[tauri::command]
-pub fn inspect_series_download_list(
-    list_path: String,
+pub fn inspect_series_download_directory(
+    input_dir: String,
 ) -> Result<SeriesDownloadListSummary, String> {
-    download::inspect_series_download_list(list_path)
+    download::inspect_series_download_directory(input_dir)
 }
 
 #[tauri::command]

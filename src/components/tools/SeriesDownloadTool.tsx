@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { PickerField } from "../common/PickerField";
-import { pickOutputDir, pickUrlListFile } from "../common/dialog";
+import { pickOutputDir } from "../common/dialog";
 import type {
   MessageTone,
   SeriesDownloadListSummary,
@@ -15,7 +15,7 @@ const DEFAULT_CONCURRENT_DOWNLOADS = 5;
 const MAX_CONCURRENT_DOWNLOADS = 20;
 
 export function SeriesDownloadTool() {
-  const [listPath, setListPath] = useState("");
+  const [inputDir, setInputDir] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [concurrentDownloads, setConcurrentDownloads] = useState(
     DEFAULT_CONCURRENT_DOWNLOADS,
@@ -32,33 +32,33 @@ export function SeriesDownloadTool() {
     concurrentDownloads >= 1 &&
     concurrentDownloads <= MAX_CONCURRENT_DOWNLOADS;
   const canSubmit =
-    listPath !== "" &&
+    inputDir !== "" &&
     outputDir !== "" &&
     summary !== null &&
     concurrencyIsValid &&
     !inspecting;
 
-  async function handlePickList() {
-    const selected = await pickUrlListFile();
+  async function handlePickInputDir() {
+    const selected = await pickOutputDir();
     if (!selected) {
       return;
     }
 
     setInspecting(true);
-    setListPath(selected);
+    setInputDir(selected);
     setSummary(null);
-    setMessage("正在读取下载清单...");
+    setMessage("正在读取目录中的 TXT 下载清单...");
     setTone("idle");
     try {
       const nextSummary = await invoke<SeriesDownloadListSummary>(
-        "inspect_series_download_list",
-        { listPath: selected },
+        "inspect_series_download_directory",
+        { inputDir: selected },
       );
       setSummary(nextSummary);
       setTone("success");
       setMessage(formatSummary(nextSummary));
     } catch (error) {
-      setListPath("");
+      setInputDir("");
       setTone("error");
       setMessage(String(error));
     } finally {
@@ -97,7 +97,7 @@ export function SeriesDownloadTool() {
 
       const result = await invoke<SeriesDownloadResult>("download_series_videos", {
         payload: {
-          listPath,
+          inputDir,
           outputDir,
           concurrentDownloads,
         },
@@ -130,21 +130,21 @@ export function SeriesDownloadTool() {
       <div className="card-head">
         <p className="card-kicker">Tool 07</p>
         <h2>剧集下载</h2>
-        <p>导入 URLPull 清单，视频将按“剧名/集数.mp4”保存到所选目录。</p>
+        <p>解析输入目录下的所有 TXT 清单，视频按“剧名/集数.mp4”保存到下载目录。</p>
       </div>
 
       <div className="picker-grid">
         <PickerField
-          label="URL 下载清单"
-          placeholder="请选择 URLPull.txt 或 CSV 文件"
-          value={listPath}
-          buttonLabel="选择 URL 下载清单"
-          kind="file"
-          onPick={handlePickList}
+          label="TXT 清单目录"
+          placeholder="请选择包含 TXT 下载清单的目录"
+          value={inputDir}
+          buttonLabel="选择 TXT 清单目录"
+          kind="folder"
+          onPick={handlePickInputDir}
         />
 
         <PickerField
-          label="输出目录"
+          label="下载目录"
           placeholder="请选择视频保存目录"
           value={outputDir}
           buttonLabel="选择剧集下载目录"
@@ -174,7 +174,11 @@ export function SeriesDownloadTool() {
 
         <div className="download-summary" aria-live="polite">
           <span>清单内容</span>
-          <strong>{summary ? `${summary.series.length} 部剧 · ${summary.episodeCount} 集` : "等待导入"}</strong>
+          <strong>
+            {summary
+              ? `${summary.fileCount} 个 TXT · ${summary.series.length} 部剧 · ${summary.episodeCount} 集`
+              : "等待导入"}
+          </strong>
         </div>
       </div>
 
@@ -201,13 +205,13 @@ export function SeriesDownloadTool() {
         {busy ? "下载中..." : "开始下载剧集"}
       </button>
 
-      <p className={`status-line ${tone}`}>{message || "等待导入下载清单"}</p>
+      <p className={`status-line ${tone}`}>{message || "等待选择 TXT 清单目录"}</p>
     </form>
   );
 }
 
 function formatSummary(summary: SeriesDownloadListSummary) {
-  return `已导入：${summary.series.length} 部剧，共 ${summary.episodeCount} 集`;
+  return `已读取 ${summary.fileCount} 个 TXT：${summary.series.length} 部剧，共 ${summary.episodeCount} 集`;
 }
 
 function formatDownloadProgress(progress: SeriesDownloadProgress) {
